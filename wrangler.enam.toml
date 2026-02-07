@@ -10,6 +10,11 @@ assets = { directory = "dist", binding = "ASSETS" }
 
 workers_dev = false
 
+# Placement hint: Execute in datacenter closest to AWS us-east-1 (Virginia)
+[placement]
+mode = "smart"
+
 # Production route for US-East endpoint
 [env.production]
 route = { pattern = "enam.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+placement = { mode = "smart", hint = "aws:us-east-1" }

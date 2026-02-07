@@ -8,5 +8,10 @@ account_id = "e7452b39fc737014144e3b3fca412900"
 assets = { directory = "dist", binding = "ASSETS" }
 workers_dev = false
 
+# Placement hint: Execute in datacenter closest to AWS ap-southeast-2 (Sydney)
+[placement]
+mode = "smart"
+
 [env.production]
 route = { pattern = "oc.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+placement = { mode = "smart", hint = "aws:ap-southeast-2" }
