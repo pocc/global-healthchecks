@@ -1,0 +1,17 @@
+# South Korea - Regional Services
+name = "global-healthchecks-kr"
+main = "src/worker.ts"
+compatibility_date = "2025-02-07"
+compatibility_flags = ["nodejs_compat"]
+account_id = "e7452b39fc737014144e3b3fca412900"
+
+assets = { directory = "dist", binding = "ASSETS" }
+workers_dev = false
+
+# Regional Services: Execute within South Korea boundary
+[placement]
+mode = "regional"
+
+[env.production]
+route = { pattern = "kr.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+placement = { mode = "regional", region = "kr" }
