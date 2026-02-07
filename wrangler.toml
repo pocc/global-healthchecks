@@ -1,0 +1,20 @@
+name = "global-healthchecks"
+main = "src/worker.ts"
+compatibility_date = "2025-02-07"
+
+# Enable sockets API
+workers_dev = true
+
+[build]
+command = "npm run build"
+
+# Sockets API requires paid plan
+# Uncomment and configure as needed
+# [env.production]
+# route = "healthchecks.example.com/*"
+# zone_id = "your-zone-id"
+
+# Example environment variables
+# [vars]
+# DEFAULT_PORT = "443"
+# TIMEOUT_MS = "5000"
