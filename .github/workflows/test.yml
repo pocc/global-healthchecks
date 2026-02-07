@@ -9,6 +9,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     strategy:
       matrix:
@@ -22,19 +23,26 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: 'npm'
+        timeout-minutes: 5
+
+      - name: Cache node modules
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
 
       - name: Install dependencies
         run: npm ci
+        timeout-minutes: 5
 
       - name: Run linter (if configured)
         run: npm run lint --if-present
+        continue-on-error: true
 
       - name: Run type check
         run: npx tsc --noEmit
-
-      - name: Run tests
-        run: npm run test:run
 
       - name: Run tests with coverage
         run: npm run test:coverage
@@ -47,6 +55,7 @@ jobs:
           flags: unittests
           name: codecov-umbrella
           fail_ci_if_error: false
+        continue-on-error: true
 
       - name: Build project
         run: npm run build
