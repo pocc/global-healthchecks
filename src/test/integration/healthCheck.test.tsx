@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
@@ -196,7 +196,13 @@ describe('Batch Health Check API', () => {
       }),
     });
 
-    const data = await response.json();
+    const data = (await response.json()) as {
+      results: Array<{
+        success: boolean;
+        host: string;
+        port: number;
+      }>;
+    };
 
     expect(data.results).toHaveLength(2);
     expect(data.results[0]).toMatchObject({
@@ -258,7 +264,10 @@ describe('MSW Handler Testing', () => {
       body: JSON.stringify({ host: 'fail.com', port: 80 }),
     });
 
-    const data = await response.json();
+    const data = (await response.json()) as {
+      success: boolean;
+      error?: string;
+    };
 
     expect(data.success).toBe(false);
     expect(data.error).toBe('Custom error for this test');
