@@ -10,11 +10,13 @@
     "deploy": "wrangler deploy",
     "dev:worker": "wrangler dev",
     "cf-typegen": "wrangler types",
+    "type-check": "tsc --noEmit",
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:watch": "vitest --watch"
+    "test:watch": "vitest --watch",
+    "prepare": "husky"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
@@ -31,6 +33,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "@vitest/ui": "^2.1.8",
     "autoprefixer": "^10.4.20",
+    "husky": "^9.1.7",
     "jsdom": "^25.0.1",
     "msw": "^2.8.5",
     "postcss": "^8.5.1",
