@@ -227,13 +227,17 @@ export default {
       }
     }
 
-    // Serve static assets (React app)
-    // In production, you'd serve the built React app from dist/
-    return new Response('Global Health Checks Worker - Use /api/check or /api/batch-check', {
-      headers: {
-        'Content-Type': 'text/plain',
-        ...corsHeaders
-      },
-    });
+    // Serve static assets (React app) from the ASSETS binding
+    try {
+      return await _env.ASSETS.fetch(request);
+    } catch {
+      // Fallback if assets aren't available
+      return new Response('Global Health Checks Worker - Use /api/check or /api/batch-check', {
+        headers: {
+          'Content-Type': 'text/plain',
+          ...corsHeaders
+        },
+      });
+    }
   },
 };

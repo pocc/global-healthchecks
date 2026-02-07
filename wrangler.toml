@@ -3,12 +3,15 @@ main = "src/worker.ts"
 compatibility_date = "2025-02-07"
 compatibility_flags = ["nodejs_compat"]
 
+# Serve static assets from dist/ directory
+assets = { directory = "dist", binding = "ASSETS" }
+
 # Enable sockets API
 workers_dev = true
 
-# Production: Only handle API routes
+# Production: Handle all routes (frontend + API)
 [env.production]
-route = { pattern = "healthchecks.ross.gg/api/*", zone_name = "ross.gg" }
+route = { pattern = "healthchecks.ross.gg/*", zone_name = "ross.gg" }
 
 # No build command needed - TypeScript compiles on deploy
 # The React app builds separately with Cloudflare Pages
