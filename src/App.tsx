@@ -29,13 +29,31 @@ interface TestResult {
   colo?: string;
 }
 
-const REGIONS = [
-  { code: 'enam', name: 'US-East', flag: '🇺🇸' },
-  { code: 'wnam', name: 'US-West', flag: '🇺🇸' },
-  { code: 'weur', name: 'EU-Central', flag: '🇪🇺' },
-  { code: 'eeur', name: 'EU-East', flag: '🇪🇺' },
-  { code: 'apac', name: 'Asia-East', flag: '🇯🇵' },
-  { code: 'oc', name: 'Oceania', flag: '🇦🇺' },
+// Regional Services - User-friendly subdomains (Primary)
+const REGIONAL_SERVICES = [
+  { code: 'us', name: 'United States', flag: '🇺🇸', description: 'North America' },
+  { code: 'ca', name: 'Canada', flag: '🇨🇦', description: 'North America' },
+  { code: 'eu', name: 'Europe', flag: '🇪🇺', description: 'GDPR Compliant' },
+  { code: 'isoeu', name: 'ISO Europe', flag: '🔒', description: 'Enhanced Security' },
+  { code: 'de', name: 'Germany', flag: '🇩🇪', description: 'Central Europe' },
+  { code: 'jp', name: 'Japan', flag: '🇯🇵', description: 'East Asia' },
+  { code: 'sg', name: 'Singapore', flag: '🇸🇬', description: 'Southeast Asia' },
+  { code: 'kr', name: 'South Korea', flag: '🇰🇷', description: 'East Asia' },
+  { code: 'in', name: 'India', flag: '🇮🇳', description: 'South Asia' },
+  { code: 'au', name: 'Australia', flag: '🇦🇺', description: 'Oceania' },
+];
+
+// Smart Placement - Performance hints (Best Effort)
+const SMART_PLACEMENT = [
+  { code: 'enam', name: 'East North America', flag: '🇺🇸', hint: true },
+  { code: 'wnam', name: 'West North America', flag: '🇺🇸', hint: true },
+  { code: 'sam', name: 'South America', flag: '🇧🇷', hint: true },
+  { code: 'weur', name: 'West Europe', flag: '🇪🇺', hint: true },
+  { code: 'eeur', name: 'East Europe', flag: '🇪🇺', hint: true },
+  { code: 'apac', name: 'Asia Pacific', flag: '🌏', hint: true },
+  { code: 'oc', name: 'Oceania', flag: '🇦🇺', hint: true },
+  { code: 'afr', name: 'Africa', flag: '🌍', hint: true },
+  { code: 'me', name: 'Middle East', flag: '🇦🇪', hint: true },
 ];
 
 const COMMON_PORTS = [
@@ -61,7 +79,23 @@ function App() {
   };
 
   const selectAllRegions = () => {
-    setSelectedRegions(REGIONS.map((r) => r.code));
+    setSelectedRegions([...REGIONAL_SERVICES.map((r) => r.code), ...SMART_PLACEMENT.map((r) => r.code)]);
+  };
+
+  const selectAllRegionalServices = () => {
+    setSelectedRegions((prev) => {
+      const smartPlacementCodes = SMART_PLACEMENT.map((r) => r.code);
+      const existingSmartPlacement = prev.filter((code) => smartPlacementCodes.includes(code));
+      return [...REGIONAL_SERVICES.map((r) => r.code), ...existingSmartPlacement];
+    });
+  };
+
+  const selectAllSmartPlacement = () => {
+    setSelectedRegions((prev) => {
+      const regionalServiceCodes = REGIONAL_SERVICES.map((r) => r.code);
+      const existingRegionalServices = prev.filter((code) => regionalServiceCodes.includes(code));
+      return [...existingRegionalServices, ...SMART_PLACEMENT.map((r) => r.code)];
+    });
   };
 
   const clearRegions = () => {
@@ -70,6 +104,13 @@ function App() {
 
   const clearResults = () => {
     setResults([]);
+  };
+
+  const getRegionName = (code: string): string => {
+    const regional = REGIONAL_SERVICES.find((r) => r.code === code);
+    if (regional) return regional.name;
+    const smart = SMART_PLACEMENT.find((r) => r.code === code);
+    return smart?.name || code;
   };
 
   const runTest = async () => {
@@ -82,7 +123,7 @@ function App() {
     // Initialize results with pending status
     const initialResults: TestResult[] = selectedRegions.map((regionCode) => ({
       region: regionCode,
-      regionName: REGIONS.find((r) => r.code === regionCode)?.name || regionCode,
+      regionName: getRegionName(regionCode),
       status: 'pending' as const,
     }));
 
@@ -90,7 +131,7 @@ function App() {
 
     // Run tests in parallel for all selected regions
     const testPromises = selectedRegions.map(async (regionCode, index) => {
-      const regionName = REGIONS.find((r) => r.code === regionCode)?.name || regionCode;
+      const regionName = getRegionName(regionCode);
 
       try {
         const checkRequest: HealthCheckRequest = {
@@ -267,9 +308,9 @@ function App() {
 
           {/* Region Selection */}
           <div>
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-4">
               <label className="block text-sm font-medium text-slate-300">
-                Select Regions ({selectedRegions.length} selected)
+                Select Test Regions ({selectedRegions.length} selected)
               </label>
               <div className="flex gap-2">
                 <button
@@ -290,22 +331,87 @@ function App() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-              {REGIONS.map((region) => (
+            {/* Regional Services - Primary */}
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                    🌍 Regional Services
+                    <span className="px-2 py-0.5 bg-primary/20 text-primary text-xs rounded-full">
+                      Recommended
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    User-friendly regional endpoints for specific countries
+                  </p>
+                </div>
                 <button
-                  key={region.code}
                   type="button"
-                  onClick={() => toggleRegion(region.code)}
-                  className={`p-4 rounded-lg border-2 transition-all ${
-                    selectedRegions.includes(region.code)
-                      ? 'border-primary bg-primary/10 text-white'
-                      : 'border-slate-600 bg-slate-700/30 text-slate-400 hover:border-slate-500'
-                  }`}
+                  onClick={selectAllRegionalServices}
+                  className="text-xs text-primary/80 hover:text-primary transition-colors"
                 >
-                  <div className="text-2xl mb-1">{region.flag}</div>
-                  <div className="text-sm font-medium">{region.name}</div>
+                  Select All Regional
                 </button>
-              ))}
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                {REGIONAL_SERVICES.map((region) => (
+                  <button
+                    key={region.code}
+                    type="button"
+                    onClick={() => toggleRegion(region.code)}
+                    className={`p-4 rounded-lg border-2 transition-all ${
+                      selectedRegions.includes(region.code)
+                        ? 'border-primary bg-primary/10 text-white shadow-lg shadow-primary/20'
+                        : 'border-slate-600 bg-slate-700/30 text-slate-400 hover:border-slate-500 hover:bg-slate-700/50'
+                    }`}
+                  >
+                    <div className="text-2xl mb-1">{region.flag}</div>
+                    <div className="text-sm font-medium">{region.name}</div>
+                    <div className="text-xs text-slate-500 mt-1">{region.description}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Smart Placement - Secondary */}
+            <div className="border-t border-slate-600 pt-6">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+                    ⚡ Smart Placement
+                    <span className="px-2 py-0.5 bg-slate-700 text-slate-400 text-xs rounded-full">
+                      Best Effort
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Performance-optimized hints for regional testing
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={selectAllSmartPlacement}
+                  className="text-xs text-slate-400 hover:text-slate-300 transition-colors"
+                >
+                  Select All Smart
+                </button>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+                {SMART_PLACEMENT.map((region) => (
+                  <button
+                    key={region.code}
+                    type="button"
+                    onClick={() => toggleRegion(region.code)}
+                    className={`p-3 rounded-lg border transition-all ${
+                      selectedRegions.includes(region.code)
+                        ? 'border-slate-500 bg-slate-700/50 text-white'
+                        : 'border-slate-700 bg-slate-800/30 text-slate-500 hover:border-slate-600 hover:bg-slate-700/30'
+                    }`}
+                  >
+                    <div className="text-xl mb-0.5">{region.flag}</div>
+                    <div className="text-xs font-medium">{region.name}</div>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
