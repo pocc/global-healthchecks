@@ -108,7 +108,13 @@ function App() {
           body: JSON.stringify(checkRequest),
         });
 
-        const data = await response.json();
+        const data = (await response.json()) as {
+          success: boolean;
+          latencyMs?: number;
+          timestamp?: number;
+          error?: string;
+          colo?: string;
+        };
 
         // Update this specific region's result
         setResults((prev) =>
