@@ -16,6 +16,7 @@ Welcome to the **Global Health Checks** documentation. This directory contains c
 | [PROJECT_HISTORY.md](PROJECT_HISTORY.md) | Timeline, changelog, and decisions | Project Managers |
 | [CONVERSATION_CONTEXT_FEB7_2026.md](CONVERSATION_CONTEXT_FEB7_2026.md) | Complete conversation context and implementation log | All Developers |
 | [SESSION_CONTINUATION_FEB7_2026_PLACEMENT_HINTS.md](SESSION_CONTINUATION_FEB7_2026_PLACEMENT_HINTS.md) | Smart Placement implementation session | DevOps, Developers |
+| [PLACEMENT_HINTS_IMPLEMENTATION_SUMMARY.md](PLACEMENT_HINTS_IMPLEMENTATION_SUMMARY.md) | Quick reference for Smart Placement setup | Everyone |
 
 ### Quick Links
 
