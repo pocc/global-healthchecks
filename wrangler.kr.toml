@@ -10,8 +10,8 @@ workers_dev = false
 
 # Regional Services: Execute within South Korea boundary
 [placement]
-mode = "regional"
+mode = "smart"
 
 [env.production]
 route = { pattern = "kr.healthchecks.ross.gg/*", zone_name = "ross.gg" }
-placement = { mode = "regional", region = "kr" }
+placement = { mode = "smart", hint = "kr" }

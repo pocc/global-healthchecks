@@ -10,8 +10,8 @@ workers_dev = false
 
 # Regional Services: Execute within Singapore boundary
 [placement]
-mode = "regional"
+mode = "smart"
 
 [env.production]
 route = { pattern = "sg.healthchecks.ross.gg/*", zone_name = "ross.gg" }
-placement = { mode = "regional", region = "sg" }
+placement = { mode = "smart", hint = "sg" }

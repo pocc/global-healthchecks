@@ -10,8 +10,8 @@ workers_dev = false
 
 # Regional Services: Execute within ISO Europe boundary (Enhanced compliance)
 [placement]
-mode = "regional"
+mode = "smart"
 
 [env.production]
 route = { pattern = "isoeu.healthchecks.ross.gg/*", zone_name = "ross.gg" }
-placement = { mode = "regional", region = "isoeu" }
+placement = { mode = "smart", hint = "isoeu" }

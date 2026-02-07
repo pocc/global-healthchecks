@@ -10,8 +10,8 @@ workers_dev = false
 
 # Regional Services: FedRAMP compliant US region
 [placement]
-mode = "regional"
+mode = "smart"
 
 [env.production]
 route = { pattern = "fedramp.healthchecks.ross.gg/*", zone_name = "ross.gg" }
-placement = { mode = "regional", region = "fedramp" }
+placement = { mode = "smart", hint = "fedramp" }

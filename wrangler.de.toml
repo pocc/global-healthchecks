@@ -10,8 +10,8 @@ workers_dev = false
 
 # Regional Services: Execute within Germany boundary
 [placement]
-mode = "regional"
+mode = "smart"
 
 [env.production]
 route = { pattern = "de.healthchecks.ross.gg/*", zone_name = "ross.gg" }
-placement = { mode = "regional", region = "de" }
+placement = { mode = "smart", hint = "de" }
