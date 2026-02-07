@@ -10,6 +10,7 @@ Welcome to the **Global Health Checks** documentation. This directory contains c
 |----------|-------------|----------|
 | [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) | Project goals, features, and use cases | Everyone |
 | [TECHNICAL_ARCHITECTURE.md](TECHNICAL_ARCHITECTURE.md) | System architecture and technical design | Developers, Architects |
+| [MULTI_REGION_DEPLOYMENT.md](MULTI_REGION_DEPLOYMENT.md) | Multi-region testing setup and deployment | DevOps, Developers |
 | [TESTING_INFRASTRUCTURE.md](TESTING_INFRASTRUCTURE.md) | Testing strategy and implementation | Developers, QA |
 | [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) | Developer workflow and coding standards | Contributors |
 | [PROJECT_HISTORY.md](PROJECT_HISTORY.md) | Timeline, changelog, and decisions | Project Managers |
@@ -38,6 +39,22 @@ Welcome to the **Global Health Checks** documentation. This directory contains c
 - Future roadmap
 
 **When to read**: Start here for project introduction and high-level understanding.
+
+### MULTI_REGION_DEPLOYMENT.md
+**What it covers**:
+- Multi-region testing architecture
+- Regional Worker deployment configuration
+- DNS setup for 6 regional subdomains
+- Frontend routing logic for regional endpoints
+- Authentication and deployment procedures
+- Testing and verification methods
+- Troubleshooting common issues
+- Cost analysis and scalability
+- Cloudflare Workers limitations
+- Alternative approaches comparison
+- Maintenance and update procedures
+
+**When to read**: When deploying or maintaining the multi-region setup.
 
 ### TECHNICAL_ARCHITECTURE.md
 **What it covers**:
@@ -296,7 +313,7 @@ See [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md#pull-request-process) for contri
 
 ---
 
-**Documentation Index Version**: 1.0
+**Documentation Index Version**: 1.1
 **Documentation Last Updated**: February 7, 2026
-**Total Documentation Pages**: 6
-**Total Documentation Words**: ~15,000+
+**Total Documentation Pages**: 7
+**Total Documentation Words**: ~20,000+
