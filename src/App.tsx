@@ -74,7 +74,7 @@ function App() {
         body: JSON.stringify(checkRequest),
       });
 
-      const data = await response.json();
+      const data = (await response.json()) as HealthCheckResult;
       setResult(data);
     } catch (error) {
       setResult({

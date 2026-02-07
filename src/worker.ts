@@ -4,6 +4,15 @@
  * with region hints for geo-distributed testing
  */
 
+// Declare the connect function from Cloudflare Workers Sockets API
+declare function connect(
+  address: { hostname: string; port: number },
+  options?: { secureTransport?: string; allowHalfOpen?: boolean }
+): {
+  opened: Promise<void>;
+  close(): Promise<void>;
+};
+
 interface HealthCheckRequest {
   host: string;
   port: number;
@@ -87,7 +96,7 @@ async function testTcpPort(
  * Main worker fetch handler
  */
 export default {
-  async fetch(request: Request, env: any, ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, _env: any, _ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
     // Add CORS headers
