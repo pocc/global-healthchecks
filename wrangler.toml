@@ -5,8 +5,8 @@ compatibility_date = "2025-02-07"
 # Enable sockets API
 workers_dev = true
 
-[build]
-command = "npm run build"
+# No build command needed - TypeScript compiles on deploy
+# The React app builds separately with Cloudflare Pages
 
 # Sockets API requires paid plan
 # Uncomment and configure as needed
