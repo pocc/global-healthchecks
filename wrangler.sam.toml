@@ -1,5 +1,5 @@
-# United States FedRAMP - Regional Services
-name = "global-healthchecks-fedramp"
+# South America - Smart Placement
+name = "global-healthchecks-sam"
 main = "src/worker.ts"
 compatibility_date = "2025-02-07"
 compatibility_flags = ["nodejs_compat"]
@@ -8,10 +8,10 @@ account_id = "e7452b39fc737014144e3b3fca412900"
 assets = { directory = "dist", binding = "ASSETS" }
 workers_dev = false
 
-# Regional Services: FedRAMP compliant US region
+# Smart Placement: South America region
 [placement]
 mode = "smart"
 
 [env.production]
-route = { pattern = "fedramp.healthchecks.ross.gg/*", zone_name = "ross.gg" }
-placement = { mode = "smart", hint = "enam" }
+route = { pattern = "sam.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+placement = { mode = "smart", hint = "sam" }

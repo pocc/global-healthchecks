@@ -3,8 +3,9 @@
 
 set -e
 
-# Unset API token to use OAuth authentication instead
+# Force clear API token to use OAuth authentication instead
 unset CLOUDFLARE_API_TOKEN
+export CLOUDFLARE_API_TOKEN=""
 
 echo "🌍 Deploying Global Health Checks to 11 Regional Services regions..."
 echo ""

@@ -14,4 +14,4 @@ mode = "smart"
 
 [env.production]
 route = { pattern = "au.healthchecks.ross.gg/*", zone_name = "ross.gg" }
-placement = { mode = "smart", hint = "au" }
+placement = { mode = "smart", hint = "oc" }
