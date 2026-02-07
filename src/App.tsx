@@ -100,7 +100,12 @@ function App() {
           region: regionCode,
         };
 
-        const response = await fetch('/api/check', {
+        // Use regional endpoint for true multi-region testing
+        const regionalEndpoint = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+          ? '/api/check' // Local development uses single endpoint
+          : `https://${regionCode}.healthchecks.ross.gg/api/check`; // Production uses regional subdomains
+
+        const response = await fetch(regionalEndpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

@@ -1,0 +1,11 @@
+# East Europe - Frankfurt region
+name = "global-healthchecks-eeur"
+main = "src/worker.ts"
+compatibility_date = "2025-02-07"
+compatibility_flags = ["nodejs_compat"]
+
+assets = { directory = "dist", binding = "ASSETS" }
+workers_dev = false
+
+[env.production]
+route = { pattern = "eeur.healthchecks.ross.gg/*", zone_name = "ross.gg" }

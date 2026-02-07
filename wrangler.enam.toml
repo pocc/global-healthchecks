@@ -1,0 +1,14 @@
+# US East (North America East) - Virginia/Ashburn region
+name = "global-healthchecks-enam"
+main = "src/worker.ts"
+compatibility_date = "2025-02-07"
+compatibility_flags = ["nodejs_compat"]
+
+# Serve static assets from dist/ directory
+assets = { directory = "dist", binding = "ASSETS" }
+
+workers_dev = false
+
+# Production route for US-East endpoint
+[env.production]
+route = { pattern = "enam.healthchecks.ross.gg/*", zone_name = "ross.gg" }
