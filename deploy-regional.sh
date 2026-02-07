@@ -21,7 +21,7 @@ for i in "${!regions[@]}"; do
     name="${region_names[$i]}"
 
     echo "🚀 Deploying $name ($region)..."
-    wrangler deploy --config "wrangler.$region.toml" --env production
+    npx wrangler deploy --config "wrangler.$region.toml" --env production
     echo "✅ $name deployed to $region.healthchecks.ross.gg"
     echo ""
 done
