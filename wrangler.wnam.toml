@@ -8,10 +8,10 @@ account_id = "e7452b39fc737014144e3b3fca412900"
 assets = { directory = "dist", binding = "ASSETS" }
 workers_dev = false
 
-# Placement hint: Execute in datacenter closest to AWS us-west-1 (California)
+# Placement hint: Execute in West North America region
 [placement]
 mode = "smart"
 
 [env.production]
 route = { pattern = "wnam.healthchecks.ross.gg/*", zone_name = "ross.gg" }
-placement = { mode = "smart", hint = "aws:us-west-1" }
+placement = { mode = "smart", hint = "wnam" }
