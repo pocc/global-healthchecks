@@ -4,14 +4,7 @@
  * with region hints for geo-distributed testing
  */
 
-// Declare the connect function from Cloudflare Workers Sockets API
-declare function connect(
-  address: { hostname: string; port: number },
-  options?: { secureTransport?: string; allowHalfOpen?: boolean }
-): {
-  opened: Promise<void>;
-  close(): Promise<void>;
-};
+import { connect } from 'cloudflare:sockets';
 
 interface HealthCheckRequest {
   host: string;

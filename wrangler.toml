@@ -1,6 +1,7 @@
 name = "global-healthchecks"
 main = "src/worker.ts"
 compatibility_date = "2025-02-07"
+compatibility_flags = ["nodejs_compat"]
 
 # Enable sockets API
 workers_dev = true
