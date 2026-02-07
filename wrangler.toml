@@ -5,14 +5,12 @@ compatibility_date = "2025-02-07"
 # Enable sockets API
 workers_dev = true
 
+# Production: Only handle API routes
+[env.production]
+route = { pattern = "healthchecks.ross.gg/api/*", zone_name = "ross.gg" }
+
 # No build command needed - TypeScript compiles on deploy
 # The React app builds separately with Cloudflare Pages
-
-# Sockets API requires paid plan
-# Uncomment and configure as needed
-# [env.production]
-# route = "healthchecks.example.com/*"
-# zone_id = "your-zone-id"
 
 # Example environment variables
 # [vars]
