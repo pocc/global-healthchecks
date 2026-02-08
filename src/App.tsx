@@ -57,51 +57,15 @@ const SMART_PLACEMENT = [
   { code: 'me', name: 'Middle East', flag: '🇦🇪', hint: true },
 ];
 
-const COMMON_PORTS = [
-  { name: 'HTTP', port: 80 },
-  { name: 'HTTPS', port: 443 },
-  { name: 'SSH', port: 22 },
-  { name: 'DNS', port: 53 },
-  { name: 'MySQL', port: 3306 },
-  { name: 'PostgreSQL', port: 5432 },
-];
-
 function App() {
   const [host, setHost] = useState('');
   const [port, setPort] = useState('443');
-  const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
+  const selectedRegions = [
+    ...REGIONAL_SERVICES.map((r) => r.code),
+    ...SMART_PLACEMENT.map((r) => r.code)
+  ];
   const [results, setResults] = useState<TestResult[]>([]);
   const [isRunning, setIsRunning] = useState(false);
-
-  const toggleRegion = (code: string) => {
-    setSelectedRegions((prev) =>
-      prev.includes(code) ? prev.filter((r) => r !== code) : [...prev, code]
-    );
-  };
-
-  const selectAllRegions = () => {
-    setSelectedRegions([...REGIONAL_SERVICES.map((r) => r.code), ...SMART_PLACEMENT.map((r) => r.code)]);
-  };
-
-  const selectAllRegionalServices = () => {
-    setSelectedRegions((prev) => {
-      const smartPlacementCodes = SMART_PLACEMENT.map((r) => r.code);
-      const existingSmartPlacement = prev.filter((code) => smartPlacementCodes.includes(code));
-      return [...REGIONAL_SERVICES.map((r) => r.code), ...existingSmartPlacement];
-    });
-  };
-
-  const selectAllSmartPlacement = () => {
-    setSelectedRegions((prev) => {
-      const regionalServiceCodes = REGIONAL_SERVICES.map((r) => r.code);
-      const existingRegionalServices = prev.filter((code) => regionalServiceCodes.includes(code));
-      return [...existingRegionalServices, ...SMART_PLACEMENT.map((r) => r.code)];
-    });
-  };
-
-  const clearRegions = () => {
-    setSelectedRegions([]);
-  };
 
   const clearResults = () => {
     setResults([]);
@@ -115,7 +79,7 @@ function App() {
   };
 
   const runTest = async () => {
-    if (!host || !port || selectedRegions.length === 0) {
+    if (!host || !port) {
       return;
     }
 
@@ -313,141 +277,13 @@ function App() {
               />
             </div>
           </div>
-
-          {/* Common Ports */}
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              Quick Select Ports
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {COMMON_PORTS.map((p) => (
-                <button
-                  key={p.port}
-                  type="button"
-                  onClick={() => setPort(p.port.toString())}
-                  className="px-3 py-1.5 bg-slate-700/50 hover:bg-slate-600 border border-slate-600 rounded-lg text-sm text-slate-300 transition-colors"
-                >
-                  {p.name} ({p.port})
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Region Selection */}
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <label className="block text-sm font-medium text-slate-300">
-                Select Test Regions ({selectedRegions.length} selected)
-              </label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={selectAllRegions}
-                  className="text-xs text-primary hover:text-primary-dark transition-colors"
-                >
-                  Select All
-                </button>
-                <span className="text-slate-600">|</span>
-                <button
-                  type="button"
-                  onClick={clearRegions}
-                  className="text-xs text-slate-400 hover:text-slate-300 transition-colors"
-                >
-                  Clear
-                </button>
-              </div>
-            </div>
-
-            {/* Regional Services - Primary */}
-            <div className="mb-6">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                    🌍 Regional Services
-                    <span className="px-2 py-0.5 bg-primary/20 text-primary text-xs rounded-full">
-                      Smart Placement Hints
-                    </span>
-                  </h3>
-                  <p className="text-xs text-slate-400 mt-1">
-                    Suggest regional execution (Cloudflare may override for performance)
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={selectAllRegionalServices}
-                  className="text-xs text-primary/80 hover:text-primary transition-colors"
-                >
-                  Select All Regional
-                </button>
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-                {REGIONAL_SERVICES.map((region) => (
-                  <button
-                    key={region.code}
-                    type="button"
-                    onClick={() => toggleRegion(region.code)}
-                    className={`p-4 rounded-lg border-2 transition-all ${
-                      selectedRegions.includes(region.code)
-                        ? 'border-primary bg-primary/10 text-white shadow-lg shadow-primary/20'
-                        : 'border-slate-600 bg-slate-700/30 text-slate-400 hover:border-slate-500 hover:bg-slate-700/50'
-                    }`}
-                  >
-                    <div className="text-2xl mb-1">{region.flag}</div>
-                    <div className="text-sm font-medium">{region.name}</div>
-                    <div className="text-xs text-slate-500 mt-1">{region.description}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Smart Placement - Secondary */}
-            <div className="border-t border-slate-600 pt-6">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
-                    ⚡ Smart Placement
-                    <span className="px-2 py-0.5 bg-slate-700 text-slate-400 text-xs rounded-full">
-                      Best Effort
-                    </span>
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Performance-optimized hints for regional testing
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={selectAllSmartPlacement}
-                  className="text-xs text-slate-400 hover:text-slate-300 transition-colors"
-                >
-                  Select All Smart
-                </button>
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
-                {SMART_PLACEMENT.map((region) => (
-                  <button
-                    key={region.code}
-                    type="button"
-                    onClick={() => toggleRegion(region.code)}
-                    className={`p-3 rounded-lg border transition-all ${
-                      selectedRegions.includes(region.code)
-                        ? 'border-slate-500 bg-slate-700/50 text-white'
-                        : 'border-slate-700 bg-slate-800/30 text-slate-500 hover:border-slate-600 hover:bg-slate-700/30'
-                    }`}
-                  >
-                    <div className="text-xl mb-0.5">{region.flag}</div>
-                    <div className="text-xs font-medium">{region.name}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* Action Buttons */}
         <div className="flex gap-3 mb-6">
           <button
             onClick={runTest}
-            disabled={isRunning || !host || !port || selectedRegions.length === 0}
+            disabled={isRunning || !host || !port}
             className="flex items-center gap-2 px-6 py-3 bg-primary hover:bg-primary-dark disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors"
           >
             {isRunning ? (

@@ -1,6 +1,6 @@
 # Smart Placement Explained
 
-> **Note:** This project now uses **Regional Services** (Enterprise feature) for guaranteed regional execution. See [REGIONAL_SERVICES.md](./REGIONAL_SERVICES.md) for comprehensive documentation on Regional Services vs Smart Placement.
+> **Note:** This project uses both **Regional Services** (guaranteed regional execution) and **Smart Placement** (performance-optimized hints). See [REGIONAL_SERVICES.md](./REGIONAL_SERVICES.md) for comprehensive documentation on the differences between these approaches.
 
 ## What Smart Placement Actually Does
 
@@ -21,25 +21,42 @@ Cloudflare analyzes the "sub-requests" your Worker makes (using `fetch`). If it 
 
 ## Smart Placement vs Regional Services
 
-This is a common point of confusion:
+These are two different approaches to controlling where Workers execute:
 
-| Feature | Control | Purpose |
-|---------|---------|---------|
-| **Regional Services** | You choose the region | Compliance & Legal (e.g., "Data must stay in the EU") |
-| **Smart Placement** | Cloudflare chooses the region | Performance (e.g., "Run this next to the database") |
+| Feature | Control | Guarantee | Primary Use Case |
+|---------|---------|-----------|------------------|
+| **Regional Services** | You choose the region | Hard geographic boundaries | Compliance, data residency, legal requirements |
+| **Smart Placement** | Cloudflare optimizes placement | Best effort (may be overridden) | Performance optimization, reducing latency |
 
-### Regional Services (Enterprise Feature)
-- You explicitly choose the region (us, eu, jp, etc.)
-- Guarantees data stays within geographic boundaries
-- Required for GDPR compliance, data sovereignty
-- Requires Enterprise plan
+### Regional Services - Guaranteed Regional Execution
+Regional Services provides **hard guarantees** about where code executes:
+- **Explicit region selection**: You specify the region using codes like `us`, `eu`, `jp`
+- **Geographic boundaries**: Workers are guaranteed to execute within the specified region
+- **Compliance focused**: Designed for GDPR, data sovereignty, and regulatory requirements
+- **Cannot be overridden**: Cloudflare will not move execution outside the specified region for performance
+- **Example use**: EU-based application must ensure all data processing stays within EU borders
 
-### Smart Placement (Performance Hints)
-- You provide a "hint" (enam, weur, apac, etc.)
-- Cloudflare decides where to actually run the Worker
-- Optimizes for speed, not geography
-- Available on all plans
-- May ignore hints to optimize performance
+### Smart Placement - Performance Optimization
+Smart Placement provides **performance hints** that Cloudflare uses to optimize execution:
+- **Hint-based system**: You provide hints like `enam` (East North America), `weur` (West Europe)
+- **Performance driven**: Cloudflare may override hints to optimize for speed
+- **Best effort**: No guarantees about execution location
+- **Available to all**: Can be used on any Cloudflare Workers plan
+- **Example use**: Worker that talks to a database in Virginia - hint `enam` to run near the database
+
+### When to Use Each
+
+**Use Regional Services when:**
+- Legal or regulatory requirements mandate data stays in specific regions
+- GDPR compliance requires EU-only processing
+- Data sovereignty laws apply
+- You need verifiable proof of execution location
+
+**Use Smart Placement when:**
+- You want to optimize performance but don't have compliance requirements
+- Your Worker makes backend calls to specific regions (databases, APIs)
+- You want to reduce latency to origin servers
+- Geographic guarantees aren't legally required
 
 ## How to Use Smart Placement
 
@@ -98,15 +115,31 @@ To see if Smart Placement moved your request, look for the `cf-placement` header
 
 ## Our Implementation
 
-In this project, we have:
-- **10 Regional Services endpoints** (us, ca, eu, de, jp, sg, kr, in, au, isoeu) - **Enterprise feature enabled**
-- **9 Smart Placement hint workers** (enam, wnam, sam, weur, eeur, apac, oc, afr, me)
+This global health checks project demonstrates both placement approaches:
 
-**Regional Services endpoints** (10) use guaranteed regional execution - Workers MUST execute within the specified geographic region.
+### Regional Services Endpoints (10 regions)
+These Workers use guaranteed regional execution:
+- **Regions**: us, ca, eu, de, jp, sg, kr, in, au, isoeu
+- **Guarantee**: Workers MUST execute within the specified geographic region
+- **Configuration**: `region = "us"` in wrangler.toml
+- **Verification**: Check `cf-placement` header - should always show `remote-XXX` for target region
 
-**Smart Placement endpoints** (9) use performance hints - Cloudflare may override hints and run the Worker anywhere for optimal performance.
+### Smart Placement Endpoints (9 regions)
+These Workers use performance hints:
+- **Hints**: enam, wnam, sam, weur, eeur, apac, oc, afr, me
+- **Behavior**: Cloudflare may override hints to optimize performance
+- **Configuration**: `mode = "smart", hint = "enam"` in wrangler.toml
+- **Verification**: Check `cf-placement` header - may show `local-XXX` if hint was ignored
 
-See [REGIONAL_SERVICES.md](./REGIONAL_SERVICES.md) for details on the Regional Services configuration and verification.
+### Comparing Behavior
+
+In testing, you'll notice different behaviors:
+- **Regional Services**: Consistently shows forwarding (e.g., `remote-CDG` for EU)
+- **Smart Placement**: May show `local-IAH` even with hint `weur`, if Cloudflare determines local execution is faster
+
+This demonstrates the key difference: Regional Services guarantees location, Smart Placement optimizes for speed.
+
+See [REGIONAL_SERVICES.md](./REGIONAL_SERVICES.md) for detailed configuration and verification steps.
 
 ## Monitoring Smart Placement
 
