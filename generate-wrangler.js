@@ -71,7 +71,9 @@ workers_dev = true
 
 # Production: Handle all routes (frontend + API)
 [env.production]
-route = { pattern = "healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.production.routes]]
+pattern = "healthchecks.ross.gg"
+custom_domain = true
 
 [observability.logs]
 enabled = true
@@ -99,9 +101,9 @@ const REGIONAL_SERVICES = [
 
 REGIONAL_SERVICES.forEach(({ code, region }) => {
   config += `[env.${code}]
-route = { pattern = "${code}.healthchecks.ross.gg/*", zone_name = "ross.gg" }
-[env.${code}.placement]
-region = "${region}"
+[[env.${code}.routes]]
+pattern = "${code}.healthchecks.ross.gg"
+custom_domain = true
 
 `;
 });
@@ -115,8 +117,11 @@ config += `# ===================================================================
 AWS_REGIONS.forEach(region => {
   const envName = `aws-${region}`;
   config += `[env.${envName}]
-route = { pattern = "${envName}.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.${envName}.routes]]
+pattern = "${envName}.healthchecks.ross.gg"
+custom_domain = true
 [env.${envName}.placement]
+mode = "targeted"
 region = "aws:${region}"
 
 `;
@@ -131,8 +136,11 @@ config += `# ===================================================================
 GCP_REGIONS.forEach(region => {
   const envName = `gcp-${region}`;
   config += `[env.${envName}]
-route = { pattern = "${envName}.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.${envName}.routes]]
+pattern = "${envName}.healthchecks.ross.gg"
+custom_domain = true
 [env.${envName}.placement]
+mode = "targeted"
 region = "gcp:${region}"
 
 `;
@@ -147,8 +155,11 @@ config += `# ===================================================================
 AZURE_REGIONS.forEach(region => {
   const envName = `azure-${region}`;
   config += `[env.${envName}]
-route = { pattern = "${envName}.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.${envName}.routes]]
+pattern = "${envName}.healthchecks.ross.gg"
+custom_domain = true
 [env.${envName}.placement]
+mode = "targeted"
 region = "azure:${region}"
 
 `;

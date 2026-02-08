@@ -12,7 +12,9 @@ workers_dev = true
 
 # Production: Handle all routes (frontend + API)
 [env.production]
-route = { pattern = "healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.production.routes]]
+pattern = "healthchecks.ross.gg"
+custom_domain = true
 
 [observability.logs]
 enabled = true
@@ -23,227 +25,329 @@ invocation_logs = true
 # ============================================================================
 
 [env.us]
-route = { pattern = "us.healthchecks.ross.gg/*", zone_name = "ross.gg" }
-[env.us.placement]
-region = "us"
+[[env.us.routes]]
+pattern = "us.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 
 [env.ca]
-route = { pattern = "ca.healthchecks.ross.gg/*", zone_name = "ross.gg" }
-[env.ca.placement]
-region = "ca"
+[[env.ca.routes]]
+pattern = "ca.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 
 [env.eu]
-route = { pattern = "eu.healthchecks.ross.gg/*", zone_name = "ross.gg" }
-[env.eu.placement]
-region = "eu"
+[[env.eu.routes]]
+pattern = "eu.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 
 [env.isoeu]
-route = { pattern = "isoeu.healthchecks.ross.gg/*", zone_name = "ross.gg" }
-[env.isoeu.placement]
-region = "isoeu"
+[[env.isoeu.routes]]
+pattern = "isoeu.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 
 [env.de]
-route = { pattern = "de.healthchecks.ross.gg/*", zone_name = "ross.gg" }
-[env.de.placement]
-region = "de"
+[[env.de.routes]]
+pattern = "de.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 
 [env.jp]
-route = { pattern = "jp.healthchecks.ross.gg/*", zone_name = "ross.gg" }
-[env.jp.placement]
-region = "jp"
+[[env.jp.routes]]
+pattern = "jp.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 
 [env.sg]
-route = { pattern = "sg.healthchecks.ross.gg/*", zone_name = "ross.gg" }
-[env.sg.placement]
-region = "sg"
+[[env.sg.routes]]
+pattern = "sg.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 
 [env.kr]
-route = { pattern = "kr.healthchecks.ross.gg/*", zone_name = "ross.gg" }
-[env.kr.placement]
-region = "kr"
+[[env.kr.routes]]
+pattern = "kr.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 
 [env.in]
-route = { pattern = "in.healthchecks.ross.gg/*", zone_name = "ross.gg" }
-[env.in.placement]
-region = "in"
+[[env.in.routes]]
+pattern = "in.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 
 [env.au]
-route = { pattern = "au.healthchecks.ross.gg/*", zone_name = "ross.gg" }
-[env.au.placement]
-region = "au"
+[[env.au.routes]]
+pattern = "au.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 
 # ============================================================================
 # AWS Placement Hints (34) - Cloud provider region hints
 # ============================================================================
 
 [env.aws-us-east-1]
-route = { pattern = "aws-us-east-1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-us-east-1.routes]]
+pattern = "aws-us-east-1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-us-east-1.placement]
+mode = "targeted"
 region = "aws:us-east-1"
 
 [env.aws-us-east-2]
-route = { pattern = "aws-us-east-2.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-us-east-2.routes]]
+pattern = "aws-us-east-2.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-us-east-2.placement]
+mode = "targeted"
 region = "aws:us-east-2"
 
 [env.aws-us-west-1]
-route = { pattern = "aws-us-west-1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-us-west-1.routes]]
+pattern = "aws-us-west-1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-us-west-1.placement]
+mode = "targeted"
 region = "aws:us-west-1"
 
 [env.aws-us-west-2]
-route = { pattern = "aws-us-west-2.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-us-west-2.routes]]
+pattern = "aws-us-west-2.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-us-west-2.placement]
+mode = "targeted"
 region = "aws:us-west-2"
 
 [env.aws-af-south-1]
-route = { pattern = "aws-af-south-1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-af-south-1.routes]]
+pattern = "aws-af-south-1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-af-south-1.placement]
+mode = "targeted"
 region = "aws:af-south-1"
 
 [env.aws-ap-east-1]
-route = { pattern = "aws-ap-east-1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-ap-east-1.routes]]
+pattern = "aws-ap-east-1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-ap-east-1.placement]
+mode = "targeted"
 region = "aws:ap-east-1"
 
 [env.aws-ap-south-1]
-route = { pattern = "aws-ap-south-1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-ap-south-1.routes]]
+pattern = "aws-ap-south-1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-ap-south-1.placement]
+mode = "targeted"
 region = "aws:ap-south-1"
 
 [env.aws-ap-south-2]
-route = { pattern = "aws-ap-south-2.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-ap-south-2.routes]]
+pattern = "aws-ap-south-2.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-ap-south-2.placement]
+mode = "targeted"
 region = "aws:ap-south-2"
 
 [env.aws-ap-northeast-1]
-route = { pattern = "aws-ap-northeast-1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-ap-northeast-1.routes]]
+pattern = "aws-ap-northeast-1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-ap-northeast-1.placement]
+mode = "targeted"
 region = "aws:ap-northeast-1"
 
 [env.aws-ap-northeast-2]
-route = { pattern = "aws-ap-northeast-2.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-ap-northeast-2.routes]]
+pattern = "aws-ap-northeast-2.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-ap-northeast-2.placement]
+mode = "targeted"
 region = "aws:ap-northeast-2"
 
 [env.aws-ap-northeast-3]
-route = { pattern = "aws-ap-northeast-3.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-ap-northeast-3.routes]]
+pattern = "aws-ap-northeast-3.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-ap-northeast-3.placement]
+mode = "targeted"
 region = "aws:ap-northeast-3"
 
 [env.aws-ap-southeast-1]
-route = { pattern = "aws-ap-southeast-1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-ap-southeast-1.routes]]
+pattern = "aws-ap-southeast-1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-ap-southeast-1.placement]
+mode = "targeted"
 region = "aws:ap-southeast-1"
 
 [env.aws-ap-southeast-2]
-route = { pattern = "aws-ap-southeast-2.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-ap-southeast-2.routes]]
+pattern = "aws-ap-southeast-2.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-ap-southeast-2.placement]
+mode = "targeted"
 region = "aws:ap-southeast-2"
 
 [env.aws-ap-southeast-3]
-route = { pattern = "aws-ap-southeast-3.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-ap-southeast-3.routes]]
+pattern = "aws-ap-southeast-3.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-ap-southeast-3.placement]
+mode = "targeted"
 region = "aws:ap-southeast-3"
 
 [env.aws-ap-southeast-4]
-route = { pattern = "aws-ap-southeast-4.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-ap-southeast-4.routes]]
+pattern = "aws-ap-southeast-4.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-ap-southeast-4.placement]
+mode = "targeted"
 region = "aws:ap-southeast-4"
 
 [env.aws-ap-southeast-5]
-route = { pattern = "aws-ap-southeast-5.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-ap-southeast-5.routes]]
+pattern = "aws-ap-southeast-5.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-ap-southeast-5.placement]
+mode = "targeted"
 region = "aws:ap-southeast-5"
 
 [env.aws-ap-southeast-6]
-route = { pattern = "aws-ap-southeast-6.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-ap-southeast-6.routes]]
+pattern = "aws-ap-southeast-6.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-ap-southeast-6.placement]
+mode = "targeted"
 region = "aws:ap-southeast-6"
 
 [env.aws-ap-southeast-7]
-route = { pattern = "aws-ap-southeast-7.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-ap-southeast-7.routes]]
+pattern = "aws-ap-southeast-7.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-ap-southeast-7.placement]
+mode = "targeted"
 region = "aws:ap-southeast-7"
 
 [env.aws-ap-east-2]
-route = { pattern = "aws-ap-east-2.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-ap-east-2.routes]]
+pattern = "aws-ap-east-2.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-ap-east-2.placement]
+mode = "targeted"
 region = "aws:ap-east-2"
 
 [env.aws-ca-central-1]
-route = { pattern = "aws-ca-central-1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-ca-central-1.routes]]
+pattern = "aws-ca-central-1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-ca-central-1.placement]
+mode = "targeted"
 region = "aws:ca-central-1"
 
 [env.aws-ca-west-1]
-route = { pattern = "aws-ca-west-1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-ca-west-1.routes]]
+pattern = "aws-ca-west-1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-ca-west-1.placement]
+mode = "targeted"
 region = "aws:ca-west-1"
 
 [env.aws-eu-central-1]
-route = { pattern = "aws-eu-central-1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-eu-central-1.routes]]
+pattern = "aws-eu-central-1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-eu-central-1.placement]
+mode = "targeted"
 region = "aws:eu-central-1"
 
 [env.aws-eu-central-2]
-route = { pattern = "aws-eu-central-2.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-eu-central-2.routes]]
+pattern = "aws-eu-central-2.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-eu-central-2.placement]
+mode = "targeted"
 region = "aws:eu-central-2"
 
 [env.aws-eu-west-1]
-route = { pattern = "aws-eu-west-1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-eu-west-1.routes]]
+pattern = "aws-eu-west-1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-eu-west-1.placement]
+mode = "targeted"
 region = "aws:eu-west-1"
 
 [env.aws-eu-west-2]
-route = { pattern = "aws-eu-west-2.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-eu-west-2.routes]]
+pattern = "aws-eu-west-2.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-eu-west-2.placement]
+mode = "targeted"
 region = "aws:eu-west-2"
 
 [env.aws-eu-west-3]
-route = { pattern = "aws-eu-west-3.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-eu-west-3.routes]]
+pattern = "aws-eu-west-3.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-eu-west-3.placement]
+mode = "targeted"
 region = "aws:eu-west-3"
 
 [env.aws-eu-north-1]
-route = { pattern = "aws-eu-north-1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-eu-north-1.routes]]
+pattern = "aws-eu-north-1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-eu-north-1.placement]
+mode = "targeted"
 region = "aws:eu-north-1"
 
 [env.aws-eu-south-1]
-route = { pattern = "aws-eu-south-1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-eu-south-1.routes]]
+pattern = "aws-eu-south-1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-eu-south-1.placement]
+mode = "targeted"
 region = "aws:eu-south-1"
 
 [env.aws-eu-south-2]
-route = { pattern = "aws-eu-south-2.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-eu-south-2.routes]]
+pattern = "aws-eu-south-2.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-eu-south-2.placement]
+mode = "targeted"
 region = "aws:eu-south-2"
 
 [env.aws-il-central-1]
-route = { pattern = "aws-il-central-1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-il-central-1.routes]]
+pattern = "aws-il-central-1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-il-central-1.placement]
+mode = "targeted"
 region = "aws:il-central-1"
 
 [env.aws-me-south-1]
-route = { pattern = "aws-me-south-1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-me-south-1.routes]]
+pattern = "aws-me-south-1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-me-south-1.placement]
+mode = "targeted"
 region = "aws:me-south-1"
 
 [env.aws-me-central-1]
-route = { pattern = "aws-me-central-1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-me-central-1.routes]]
+pattern = "aws-me-central-1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-me-central-1.placement]
+mode = "targeted"
 region = "aws:me-central-1"
 
 [env.aws-mx-central-1]
-route = { pattern = "aws-mx-central-1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-mx-central-1.routes]]
+pattern = "aws-mx-central-1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-mx-central-1.placement]
+mode = "targeted"
 region = "aws:mx-central-1"
 
 [env.aws-sa-east-1]
-route = { pattern = "aws-sa-east-1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.aws-sa-east-1.routes]]
+pattern = "aws-sa-east-1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.aws-sa-east-1.placement]
+mode = "targeted"
 region = "aws:sa-east-1"
 
 # ============================================================================
@@ -251,218 +355,347 @@ region = "aws:sa-east-1"
 # ============================================================================
 
 [env.gcp-africa-south1]
-route = { pattern = "gcp-africa-south1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-africa-south1.routes]]
+pattern = "gcp-africa-south1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-africa-south1.placement]
+mode = "targeted"
 region = "gcp:africa-south1"
 
 [env.gcp-asia-east1]
-route = { pattern = "gcp-asia-east1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-asia-east1.routes]]
+pattern = "gcp-asia-east1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-asia-east1.placement]
+mode = "targeted"
 region = "gcp:asia-east1"
 
 [env.gcp-asia-east2]
-route = { pattern = "gcp-asia-east2.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-asia-east2.routes]]
+pattern = "gcp-asia-east2.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-asia-east2.placement]
+mode = "targeted"
 region = "gcp:asia-east2"
 
 [env.gcp-asia-northeast1]
-route = { pattern = "gcp-asia-northeast1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-asia-northeast1.routes]]
+pattern = "gcp-asia-northeast1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-asia-northeast1.placement]
+mode = "targeted"
 region = "gcp:asia-northeast1"
 
 [env.gcp-asia-northeast2]
-route = { pattern = "gcp-asia-northeast2.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-asia-northeast2.routes]]
+pattern = "gcp-asia-northeast2.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-asia-northeast2.placement]
+mode = "targeted"
 region = "gcp:asia-northeast2"
 
 [env.gcp-asia-northeast3]
-route = { pattern = "gcp-asia-northeast3.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-asia-northeast3.routes]]
+pattern = "gcp-asia-northeast3.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-asia-northeast3.placement]
+mode = "targeted"
 region = "gcp:asia-northeast3"
 
 [env.gcp-asia-south1]
-route = { pattern = "gcp-asia-south1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-asia-south1.routes]]
+pattern = "gcp-asia-south1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-asia-south1.placement]
+mode = "targeted"
 region = "gcp:asia-south1"
 
 [env.gcp-asia-south2]
-route = { pattern = "gcp-asia-south2.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-asia-south2.routes]]
+pattern = "gcp-asia-south2.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-asia-south2.placement]
+mode = "targeted"
 region = "gcp:asia-south2"
 
 [env.gcp-asia-southeast1]
-route = { pattern = "gcp-asia-southeast1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-asia-southeast1.routes]]
+pattern = "gcp-asia-southeast1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-asia-southeast1.placement]
+mode = "targeted"
 region = "gcp:asia-southeast1"
 
 [env.gcp-asia-southeast2]
-route = { pattern = "gcp-asia-southeast2.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-asia-southeast2.routes]]
+pattern = "gcp-asia-southeast2.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-asia-southeast2.placement]
+mode = "targeted"
 region = "gcp:asia-southeast2"
 
 [env.gcp-asia-southeast3]
-route = { pattern = "gcp-asia-southeast3.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-asia-southeast3.routes]]
+pattern = "gcp-asia-southeast3.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-asia-southeast3.placement]
+mode = "targeted"
 region = "gcp:asia-southeast3"
 
 [env.gcp-australia-southeast1]
-route = { pattern = "gcp-australia-southeast1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-australia-southeast1.routes]]
+pattern = "gcp-australia-southeast1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-australia-southeast1.placement]
+mode = "targeted"
 region = "gcp:australia-southeast1"
 
 [env.gcp-australia-southeast2]
-route = { pattern = "gcp-australia-southeast2.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-australia-southeast2.routes]]
+pattern = "gcp-australia-southeast2.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-australia-southeast2.placement]
+mode = "targeted"
 region = "gcp:australia-southeast2"
 
 [env.gcp-europe-central2]
-route = { pattern = "gcp-europe-central2.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-europe-central2.routes]]
+pattern = "gcp-europe-central2.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-europe-central2.placement]
+mode = "targeted"
 region = "gcp:europe-central2"
 
 [env.gcp-europe-north1]
-route = { pattern = "gcp-europe-north1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-europe-north1.routes]]
+pattern = "gcp-europe-north1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-europe-north1.placement]
+mode = "targeted"
 region = "gcp:europe-north1"
 
 [env.gcp-europe-north2]
-route = { pattern = "gcp-europe-north2.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-europe-north2.routes]]
+pattern = "gcp-europe-north2.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-europe-north2.placement]
+mode = "targeted"
 region = "gcp:europe-north2"
 
 [env.gcp-europe-southwest1]
-route = { pattern = "gcp-europe-southwest1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-europe-southwest1.routes]]
+pattern = "gcp-europe-southwest1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-europe-southwest1.placement]
+mode = "targeted"
 region = "gcp:europe-southwest1"
 
 [env.gcp-europe-west1]
-route = { pattern = "gcp-europe-west1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-europe-west1.routes]]
+pattern = "gcp-europe-west1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-europe-west1.placement]
+mode = "targeted"
 region = "gcp:europe-west1"
 
 [env.gcp-europe-west2]
-route = { pattern = "gcp-europe-west2.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-europe-west2.routes]]
+pattern = "gcp-europe-west2.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-europe-west2.placement]
+mode = "targeted"
 region = "gcp:europe-west2"
 
 [env.gcp-europe-west3]
-route = { pattern = "gcp-europe-west3.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-europe-west3.routes]]
+pattern = "gcp-europe-west3.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-europe-west3.placement]
+mode = "targeted"
 region = "gcp:europe-west3"
 
 [env.gcp-europe-west4]
-route = { pattern = "gcp-europe-west4.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-europe-west4.routes]]
+pattern = "gcp-europe-west4.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-europe-west4.placement]
+mode = "targeted"
 region = "gcp:europe-west4"
 
 [env.gcp-europe-west6]
-route = { pattern = "gcp-europe-west6.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-europe-west6.routes]]
+pattern = "gcp-europe-west6.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-europe-west6.placement]
+mode = "targeted"
 region = "gcp:europe-west6"
 
 [env.gcp-europe-west8]
-route = { pattern = "gcp-europe-west8.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-europe-west8.routes]]
+pattern = "gcp-europe-west8.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-europe-west8.placement]
+mode = "targeted"
 region = "gcp:europe-west8"
 
 [env.gcp-europe-west9]
-route = { pattern = "gcp-europe-west9.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-europe-west9.routes]]
+pattern = "gcp-europe-west9.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-europe-west9.placement]
+mode = "targeted"
 region = "gcp:europe-west9"
 
 [env.gcp-europe-west10]
-route = { pattern = "gcp-europe-west10.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-europe-west10.routes]]
+pattern = "gcp-europe-west10.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-europe-west10.placement]
+mode = "targeted"
 region = "gcp:europe-west10"
 
 [env.gcp-europe-west12]
-route = { pattern = "gcp-europe-west12.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-europe-west12.routes]]
+pattern = "gcp-europe-west12.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-europe-west12.placement]
+mode = "targeted"
 region = "gcp:europe-west12"
 
 [env.gcp-me-central1]
-route = { pattern = "gcp-me-central1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-me-central1.routes]]
+pattern = "gcp-me-central1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-me-central1.placement]
+mode = "targeted"
 region = "gcp:me-central1"
 
 [env.gcp-me-central2]
-route = { pattern = "gcp-me-central2.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-me-central2.routes]]
+pattern = "gcp-me-central2.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-me-central2.placement]
+mode = "targeted"
 region = "gcp:me-central2"
 
 [env.gcp-me-west1]
-route = { pattern = "gcp-me-west1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-me-west1.routes]]
+pattern = "gcp-me-west1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-me-west1.placement]
+mode = "targeted"
 region = "gcp:me-west1"
 
 [env.gcp-northamerica-northeast1]
-route = { pattern = "gcp-northamerica-northeast1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-northamerica-northeast1.routes]]
+pattern = "gcp-northamerica-northeast1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-northamerica-northeast1.placement]
+mode = "targeted"
 region = "gcp:northamerica-northeast1"
 
 [env.gcp-northamerica-northeast2]
-route = { pattern = "gcp-northamerica-northeast2.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-northamerica-northeast2.routes]]
+pattern = "gcp-northamerica-northeast2.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-northamerica-northeast2.placement]
+mode = "targeted"
 region = "gcp:northamerica-northeast2"
 
 [env.gcp-northamerica-south1]
-route = { pattern = "gcp-northamerica-south1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-northamerica-south1.routes]]
+pattern = "gcp-northamerica-south1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-northamerica-south1.placement]
+mode = "targeted"
 region = "gcp:northamerica-south1"
 
 [env.gcp-southamerica-east1]
-route = { pattern = "gcp-southamerica-east1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-southamerica-east1.routes]]
+pattern = "gcp-southamerica-east1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-southamerica-east1.placement]
+mode = "targeted"
 region = "gcp:southamerica-east1"
 
 [env.gcp-southamerica-west1]
-route = { pattern = "gcp-southamerica-west1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-southamerica-west1.routes]]
+pattern = "gcp-southamerica-west1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-southamerica-west1.placement]
+mode = "targeted"
 region = "gcp:southamerica-west1"
 
 [env.gcp-us-central1]
-route = { pattern = "gcp-us-central1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-us-central1.routes]]
+pattern = "gcp-us-central1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-us-central1.placement]
+mode = "targeted"
 region = "gcp:us-central1"
 
 [env.gcp-us-east1]
-route = { pattern = "gcp-us-east1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-us-east1.routes]]
+pattern = "gcp-us-east1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-us-east1.placement]
+mode = "targeted"
 region = "gcp:us-east1"
 
 [env.gcp-us-east4]
-route = { pattern = "gcp-us-east4.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-us-east4.routes]]
+pattern = "gcp-us-east4.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-us-east4.placement]
+mode = "targeted"
 region = "gcp:us-east4"
 
 [env.gcp-us-east5]
-route = { pattern = "gcp-us-east5.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-us-east5.routes]]
+pattern = "gcp-us-east5.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-us-east5.placement]
+mode = "targeted"
 region = "gcp:us-east5"
 
 [env.gcp-us-south1]
-route = { pattern = "gcp-us-south1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-us-south1.routes]]
+pattern = "gcp-us-south1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-us-south1.placement]
+mode = "targeted"
 region = "gcp:us-south1"
 
 [env.gcp-us-west1]
-route = { pattern = "gcp-us-west1.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-us-west1.routes]]
+pattern = "gcp-us-west1.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-us-west1.placement]
+mode = "targeted"
 region = "gcp:us-west1"
 
 [env.gcp-us-west2]
-route = { pattern = "gcp-us-west2.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-us-west2.routes]]
+pattern = "gcp-us-west2.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-us-west2.placement]
+mode = "targeted"
 region = "gcp:us-west2"
 
 [env.gcp-us-west3]
-route = { pattern = "gcp-us-west3.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-us-west3.routes]]
+pattern = "gcp-us-west3.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-us-west3.placement]
+mode = "targeted"
 region = "gcp:us-west3"
 
 [env.gcp-us-west4]
-route = { pattern = "gcp-us-west4.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.gcp-us-west4.routes]]
+pattern = "gcp-us-west4.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.gcp-us-west4.placement]
+mode = "targeted"
 region = "gcp:us-west4"
 
 # ============================================================================
@@ -470,282 +703,450 @@ region = "gcp:us-west4"
 # ============================================================================
 
 [env.azure-australiacentral]
-route = { pattern = "azure-australiacentral.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-australiacentral.routes]]
+pattern = "azure-australiacentral.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-australiacentral.placement]
+mode = "targeted"
 region = "azure:australiacentral"
 
 [env.azure-australiacentral2]
-route = { pattern = "azure-australiacentral2.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-australiacentral2.routes]]
+pattern = "azure-australiacentral2.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-australiacentral2.placement]
+mode = "targeted"
 region = "azure:australiacentral2"
 
 [env.azure-australiaeast]
-route = { pattern = "azure-australiaeast.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-australiaeast.routes]]
+pattern = "azure-australiaeast.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-australiaeast.placement]
+mode = "targeted"
 region = "azure:australiaeast"
 
 [env.azure-australiasoutheast]
-route = { pattern = "azure-australiasoutheast.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-australiasoutheast.routes]]
+pattern = "azure-australiasoutheast.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-australiasoutheast.placement]
+mode = "targeted"
 region = "azure:australiasoutheast"
 
 [env.azure-austriaeast]
-route = { pattern = "azure-austriaeast.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-austriaeast.routes]]
+pattern = "azure-austriaeast.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-austriaeast.placement]
+mode = "targeted"
 region = "azure:austriaeast"
 
 [env.azure-belgiumcentral]
-route = { pattern = "azure-belgiumcentral.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-belgiumcentral.routes]]
+pattern = "azure-belgiumcentral.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-belgiumcentral.placement]
+mode = "targeted"
 region = "azure:belgiumcentral"
 
 [env.azure-brazilsouth]
-route = { pattern = "azure-brazilsouth.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-brazilsouth.routes]]
+pattern = "azure-brazilsouth.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-brazilsouth.placement]
+mode = "targeted"
 region = "azure:brazilsouth"
 
 [env.azure-brazilsoutheast]
-route = { pattern = "azure-brazilsoutheast.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-brazilsoutheast.routes]]
+pattern = "azure-brazilsoutheast.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-brazilsoutheast.placement]
+mode = "targeted"
 region = "azure:brazilsoutheast"
 
 [env.azure-canadacentral]
-route = { pattern = "azure-canadacentral.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-canadacentral.routes]]
+pattern = "azure-canadacentral.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-canadacentral.placement]
+mode = "targeted"
 region = "azure:canadacentral"
 
 [env.azure-canadaeast]
-route = { pattern = "azure-canadaeast.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-canadaeast.routes]]
+pattern = "azure-canadaeast.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-canadaeast.placement]
+mode = "targeted"
 region = "azure:canadaeast"
 
 [env.azure-centralindia]
-route = { pattern = "azure-centralindia.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-centralindia.routes]]
+pattern = "azure-centralindia.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-centralindia.placement]
+mode = "targeted"
 region = "azure:centralindia"
 
 [env.azure-centralus]
-route = { pattern = "azure-centralus.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-centralus.routes]]
+pattern = "azure-centralus.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-centralus.placement]
+mode = "targeted"
 region = "azure:centralus"
 
 [env.azure-chilecentral]
-route = { pattern = "azure-chilecentral.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-chilecentral.routes]]
+pattern = "azure-chilecentral.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-chilecentral.placement]
+mode = "targeted"
 region = "azure:chilecentral"
 
 [env.azure-denmarkeast]
-route = { pattern = "azure-denmarkeast.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-denmarkeast.routes]]
+pattern = "azure-denmarkeast.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-denmarkeast.placement]
+mode = "targeted"
 region = "azure:denmarkeast"
 
 [env.azure-eastasia]
-route = { pattern = "azure-eastasia.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-eastasia.routes]]
+pattern = "azure-eastasia.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-eastasia.placement]
+mode = "targeted"
 region = "azure:eastasia"
 
 [env.azure-eastus]
-route = { pattern = "azure-eastus.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-eastus.routes]]
+pattern = "azure-eastus.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-eastus.placement]
+mode = "targeted"
 region = "azure:eastus"
 
 [env.azure-eastus2]
-route = { pattern = "azure-eastus2.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-eastus2.routes]]
+pattern = "azure-eastus2.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-eastus2.placement]
+mode = "targeted"
 region = "azure:eastus2"
 
 [env.azure-francecentral]
-route = { pattern = "azure-francecentral.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-francecentral.routes]]
+pattern = "azure-francecentral.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-francecentral.placement]
+mode = "targeted"
 region = "azure:francecentral"
 
 [env.azure-francesouth]
-route = { pattern = "azure-francesouth.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-francesouth.routes]]
+pattern = "azure-francesouth.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-francesouth.placement]
+mode = "targeted"
 region = "azure:francesouth"
 
 [env.azure-germanynorth]
-route = { pattern = "azure-germanynorth.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-germanynorth.routes]]
+pattern = "azure-germanynorth.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-germanynorth.placement]
+mode = "targeted"
 region = "azure:germanynorth"
 
 [env.azure-germanywestcentral]
-route = { pattern = "azure-germanywestcentral.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-germanywestcentral.routes]]
+pattern = "azure-germanywestcentral.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-germanywestcentral.placement]
+mode = "targeted"
 region = "azure:germanywestcentral"
 
 [env.azure-indonesiacentral]
-route = { pattern = "azure-indonesiacentral.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-indonesiacentral.routes]]
+pattern = "azure-indonesiacentral.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-indonesiacentral.placement]
+mode = "targeted"
 region = "azure:indonesiacentral"
 
 [env.azure-israelcentral]
-route = { pattern = "azure-israelcentral.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-israelcentral.routes]]
+pattern = "azure-israelcentral.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-israelcentral.placement]
+mode = "targeted"
 region = "azure:israelcentral"
 
 [env.azure-italynorth]
-route = { pattern = "azure-italynorth.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-italynorth.routes]]
+pattern = "azure-italynorth.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-italynorth.placement]
+mode = "targeted"
 region = "azure:italynorth"
 
 [env.azure-japaneast]
-route = { pattern = "azure-japaneast.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-japaneast.routes]]
+pattern = "azure-japaneast.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-japaneast.placement]
+mode = "targeted"
 region = "azure:japaneast"
 
 [env.azure-japanwest]
-route = { pattern = "azure-japanwest.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-japanwest.routes]]
+pattern = "azure-japanwest.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-japanwest.placement]
+mode = "targeted"
 region = "azure:japanwest"
 
 [env.azure-koreacentral]
-route = { pattern = "azure-koreacentral.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-koreacentral.routes]]
+pattern = "azure-koreacentral.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-koreacentral.placement]
+mode = "targeted"
 region = "azure:koreacentral"
 
 [env.azure-koreasouth]
-route = { pattern = "azure-koreasouth.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-koreasouth.routes]]
+pattern = "azure-koreasouth.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-koreasouth.placement]
+mode = "targeted"
 region = "azure:koreasouth"
 
 [env.azure-malaysiawest]
-route = { pattern = "azure-malaysiawest.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-malaysiawest.routes]]
+pattern = "azure-malaysiawest.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-malaysiawest.placement]
+mode = "targeted"
 region = "azure:malaysiawest"
 
 [env.azure-mexicocentral]
-route = { pattern = "azure-mexicocentral.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-mexicocentral.routes]]
+pattern = "azure-mexicocentral.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-mexicocentral.placement]
+mode = "targeted"
 region = "azure:mexicocentral"
 
 [env.azure-newzealandnorth]
-route = { pattern = "azure-newzealandnorth.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-newzealandnorth.routes]]
+pattern = "azure-newzealandnorth.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-newzealandnorth.placement]
+mode = "targeted"
 region = "azure:newzealandnorth"
 
 [env.azure-northcentralus]
-route = { pattern = "azure-northcentralus.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-northcentralus.routes]]
+pattern = "azure-northcentralus.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-northcentralus.placement]
+mode = "targeted"
 region = "azure:northcentralus"
 
 [env.azure-northeurope]
-route = { pattern = "azure-northeurope.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-northeurope.routes]]
+pattern = "azure-northeurope.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-northeurope.placement]
+mode = "targeted"
 region = "azure:northeurope"
 
 [env.azure-norwayeast]
-route = { pattern = "azure-norwayeast.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-norwayeast.routes]]
+pattern = "azure-norwayeast.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-norwayeast.placement]
+mode = "targeted"
 region = "azure:norwayeast"
 
 [env.azure-norwaywest]
-route = { pattern = "azure-norwaywest.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-norwaywest.routes]]
+pattern = "azure-norwaywest.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-norwaywest.placement]
+mode = "targeted"
 region = "azure:norwaywest"
 
 [env.azure-polandcentral]
-route = { pattern = "azure-polandcentral.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-polandcentral.routes]]
+pattern = "azure-polandcentral.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-polandcentral.placement]
+mode = "targeted"
 region = "azure:polandcentral"
 
 [env.azure-qatarcentral]
-route = { pattern = "azure-qatarcentral.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-qatarcentral.routes]]
+pattern = "azure-qatarcentral.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-qatarcentral.placement]
+mode = "targeted"
 region = "azure:qatarcentral"
 
 [env.azure-southafricanorth]
-route = { pattern = "azure-southafricanorth.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-southafricanorth.routes]]
+pattern = "azure-southafricanorth.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-southafricanorth.placement]
+mode = "targeted"
 region = "azure:southafricanorth"
 
 [env.azure-southafricawest]
-route = { pattern = "azure-southafricawest.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-southafricawest.routes]]
+pattern = "azure-southafricawest.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-southafricawest.placement]
+mode = "targeted"
 region = "azure:southafricawest"
 
 [env.azure-southcentralus]
-route = { pattern = "azure-southcentralus.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-southcentralus.routes]]
+pattern = "azure-southcentralus.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-southcentralus.placement]
+mode = "targeted"
 region = "azure:southcentralus"
 
 [env.azure-southindia]
-route = { pattern = "azure-southindia.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-southindia.routes]]
+pattern = "azure-southindia.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-southindia.placement]
+mode = "targeted"
 region = "azure:southindia"
 
 [env.azure-southeastasia]
-route = { pattern = "azure-southeastasia.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-southeastasia.routes]]
+pattern = "azure-southeastasia.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-southeastasia.placement]
+mode = "targeted"
 region = "azure:southeastasia"
 
 [env.azure-spaincentral]
-route = { pattern = "azure-spaincentral.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-spaincentral.routes]]
+pattern = "azure-spaincentral.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-spaincentral.placement]
+mode = "targeted"
 region = "azure:spaincentral"
 
 [env.azure-swedencentral]
-route = { pattern = "azure-swedencentral.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-swedencentral.routes]]
+pattern = "azure-swedencentral.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-swedencentral.placement]
+mode = "targeted"
 region = "azure:swedencentral"
 
 [env.azure-switzerlandnorth]
-route = { pattern = "azure-switzerlandnorth.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-switzerlandnorth.routes]]
+pattern = "azure-switzerlandnorth.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-switzerlandnorth.placement]
+mode = "targeted"
 region = "azure:switzerlandnorth"
 
 [env.azure-switzerlandwest]
-route = { pattern = "azure-switzerlandwest.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-switzerlandwest.routes]]
+pattern = "azure-switzerlandwest.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-switzerlandwest.placement]
+mode = "targeted"
 region = "azure:switzerlandwest"
 
 [env.azure-uaecentral]
-route = { pattern = "azure-uaecentral.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-uaecentral.routes]]
+pattern = "azure-uaecentral.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-uaecentral.placement]
+mode = "targeted"
 region = "azure:uaecentral"
 
 [env.azure-uaenorth]
-route = { pattern = "azure-uaenorth.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-uaenorth.routes]]
+pattern = "azure-uaenorth.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-uaenorth.placement]
+mode = "targeted"
 region = "azure:uaenorth"
 
 [env.azure-uksouth]
-route = { pattern = "azure-uksouth.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-uksouth.routes]]
+pattern = "azure-uksouth.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-uksouth.placement]
+mode = "targeted"
 region = "azure:uksouth"
 
 [env.azure-ukwest]
-route = { pattern = "azure-ukwest.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-ukwest.routes]]
+pattern = "azure-ukwest.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-ukwest.placement]
+mode = "targeted"
 region = "azure:ukwest"
 
 [env.azure-westcentralus]
-route = { pattern = "azure-westcentralus.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-westcentralus.routes]]
+pattern = "azure-westcentralus.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-westcentralus.placement]
+mode = "targeted"
 region = "azure:westcentralus"
 
 [env.azure-westeurope]
-route = { pattern = "azure-westeurope.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-westeurope.routes]]
+pattern = "azure-westeurope.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-westeurope.placement]
+mode = "targeted"
 region = "azure:westeurope"
 
 [env.azure-westindia]
-route = { pattern = "azure-westindia.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-westindia.routes]]
+pattern = "azure-westindia.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-westindia.placement]
+mode = "targeted"
 region = "azure:westindia"
 
 [env.azure-westus]
-route = { pattern = "azure-westus.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-westus.routes]]
+pattern = "azure-westus.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-westus.placement]
+mode = "targeted"
 region = "azure:westus"
 
 [env.azure-westus2]
-route = { pattern = "azure-westus2.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-westus2.routes]]
+pattern = "azure-westus2.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-westus2.placement]
+mode = "targeted"
 region = "azure:westus2"
 
 [env.azure-westus3]
-route = { pattern = "azure-westus3.healthchecks.ross.gg/*", zone_name = "ross.gg" }
+[[env.azure-westus3.routes]]
+pattern = "azure-westus3.healthchecks.ross.gg/*"
+zone_name = "ross.gg"
 [env.azure-westus3.placement]
+mode = "targeted"
 region = "azure:westus3"
 

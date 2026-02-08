@@ -191,7 +191,7 @@ const AZURE_PLACEMENT = [
 ];
 
 function App() {
-  const [host, setHost] = useState('');
+  const [host, setHost] = useState('amazon.com');
   const [port, setPort] = useState('443');
   const [hostError, setHostError] = useState('');
   const selectedRegions = [
@@ -266,6 +266,30 @@ function App() {
     if (azure) return azure.name;
     return code;
   };
+
+  const getRegionType = (code: string): 'regional' | 'aws' | 'gcp' | 'azure' => {
+    if (REGIONAL_SERVICES.some((r) => r.code === code)) return 'regional';
+    if (code.startsWith('aws-')) return 'aws';
+    if (code.startsWith('gcp-')) return 'gcp';
+    return 'azure';
+  };
+
+  // Group boundaries for separator rows
+  const groupBoundaries = new Map<number, { label: string; color: string }>();
+  let currentGroup = '';
+  selectedRegions.forEach((code, index) => {
+    const type = getRegionType(code);
+    if (type !== currentGroup) {
+      currentGroup = type;
+      const labels: Record<string, { label: string; color: string }> = {
+        regional: { label: 'Cloudflare Regional Services', color: 'border-orange-500/40 bg-orange-500/5 text-orange-300' },
+        aws: { label: 'AWS Placement Hints', color: 'border-teal-500/40 bg-teal-500/5 text-teal-300' },
+        gcp: { label: 'GCP Placement Hints', color: 'border-blue-500/40 bg-blue-500/5 text-blue-300' },
+        azure: { label: 'Azure Placement Hints', color: 'border-sky-500/40 bg-sky-500/5 text-sky-300' },
+      };
+      groupBoundaries.set(index, labels[type]);
+    }
+  });
 
   const runTest = async () => {
     if (!host || !port) {
@@ -556,10 +580,37 @@ function App() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-700">
-                  {results.map((result, index) => (
+                  {(() => {
+                    let groupRowIndex = 0;
+                    let prevType = '';
+                    return results.map((result, index) => {
+                    const group = groupBoundaries.get(index);
+                    const regionType = getRegionType(result.region);
+                    if (regionType !== prevType) {
+                      groupRowIndex = 0;
+                      prevType = regionType;
+                    }
+                    const isEvenRow = groupRowIndex % 2 === 0;
+                    groupRowIndex++;
+                    // Subtle left border color per group
+                    const rowAccent = {
+                      regional: 'border-l-2 border-l-orange-500/30',
+                      aws: 'border-l-2 border-l-teal-500/30',
+                      gcp: 'border-l-2 border-l-blue-500/30',
+                      azure: 'border-l-2 border-l-sky-500/30',
+                    }[regionType];
+                    const stripeBg = isEvenRow ? '' : 'bg-slate-800/30';
+                    return (<>
+                    {group && (
+                      <tr key={`group-${index}`}>
+                        <td colSpan={8} className={`px-6 py-2 text-xs font-semibold uppercase tracking-wider border-l-2 ${group.color}`}>
+                          {group.label}
+                        </td>
+                      </tr>
+                    )}
                     <tr
                       key={index}
-                      className="hover:bg-slate-700/30 transition-colors"
+                      className={`hover:bg-slate-700/30 transition-colors ${rowAccent} ${stripeBg}`}
                     >
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center gap-2">
@@ -600,6 +651,10 @@ function App() {
                               🔀 Forwarded {result.region} ({result.cfPlacement})
                             </span>
                           )
+                        ) : regionType === 'regional' ? (
+                          <span className="text-xs px-2 py-1 rounded-full font-medium bg-orange-500/15 text-orange-400">
+                            N/A — Regional Service
+                          </span>
                         ) : (
                           <span className="text-sm text-slate-500">-</span>
                         )}
@@ -620,7 +675,9 @@ function App() {
                         )}
                       </td>
                     </tr>
-                  ))}
+                    </>);
+                  });
+                  })()}
                 </tbody>
               </table>
             </div>

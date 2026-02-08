@@ -17,6 +17,7 @@ Welcome to the **Global Health Checks** documentation. This directory contains c
 | [CONVERSATION_CONTEXT_FEB7_2026.md](CONVERSATION_CONTEXT_FEB7_2026.md) | Complete conversation context and implementation log | All Developers |
 | [SESSION_CONTINUATION_FEB7_2026_PLACEMENT_HINTS.md](SESSION_CONTINUATION_FEB7_2026_PLACEMENT_HINTS.md) | Smart Placement implementation session | DevOps, Developers |
 | [PLACEMENT_HINTS_IMPLEMENTATION_SUMMARY.md](PLACEMENT_HINTS_IMPLEMENTATION_SUMMARY.md) | Quick reference for Smart Placement setup | Everyone |
+| [TARGETED_PLACEMENT_DEPLOYMENT.md](TARGETED_PLACEMENT_DEPLOYMENT.md) | 143-endpoint targeted placement deployment (Feb 8, 2026) | DevOps, Developers |
 
 ### Quick Links
 

@@ -335,6 +335,18 @@ export const COLO_TO_CITY: Record<string, string> = {
   'YYZ': 'Toronto, ON',
   'YVR': 'Vancouver, BC',
   'YWG': 'Winnipeg, MB',
+
+  // Oceania
+  'AKL': 'Auckland, New Zealand',
+  'BNE': 'Brisbane, Australia',
+  'CHC': 'Christchurch, New Zealand',
+  'GUM': 'Hagåtña, Guam',
+  'MEL': 'Melbourne, Australia',
+  'NAN': 'Nadi, Fiji',
+  'NOU': 'Nouméa, New Caledonia',
+  'PER': 'Perth, Australia',
+  'PPT': 'Papeete, French Polynesia',
+  'SYD': 'Sydney, Australia',
 };
 
 /**
