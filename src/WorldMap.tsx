@@ -15,6 +15,9 @@ interface TestResult {
   colo?: string;
   coloCity?: string;
   cfPlacement?: string;
+  tcpMs?: number;
+  tlsHandshakeMs?: number;
+  httpMs?: number;
 }
 
 interface HomeLocation {
@@ -36,6 +39,8 @@ interface WorldMapProps {
   allRegions: string[];
   homeLocation: HomeLocation | null;
   targetLocation: TargetLocation | null;
+  speedMultiplier: number;  // 1x–100x animation speed multiplier
+  soundEnabled: boolean;
 }
 
 /* ── Provider brand colors ── */
@@ -101,9 +106,201 @@ const PROVIDER_LABELS: Record<string, string> = {
 const REPLAY_DELAY = 5000;  // 5s after pings sent, replay all results
 const MIN_LEG_MS = 16;      // ~1 frame minimum per leg
 const MAX_PACKETS = 300;    // 2 concurrent rounds of 143 regions
-const TRAIL_FADE = 1500;    // completed trail fade duration (ms)
+const TRAIL_FADE_NORMAL = 1500;    // completed trail fade duration (ms)
 const RIPPLE_DUR = 400;     // impact ripple duration (ms)
-const SPEED_MULT = 100;     // duration = sqrt(latency) * SPEED_MULT
+
+// Module-level animation + audio state
+let currentSpeedMult = 10;     // mirrors prop for module-level functions
+let currentSoundEnabled = false;
+let currentTrailFade = TRAIL_FADE_NORMAL;
+let lastAnimEndTime = 0;       // track when current batch animation ends
+let audioCtx: AudioContext | null = null;
+let soundTimeouts: ReturnType<typeof setTimeout>[] = [];
+
+function clearSoundTimeouts() {
+  soundTimeouts.forEach(t => clearTimeout(t));
+  soundTimeouts = [];
+}
+
+function getAudioCtx(): AudioContext | null {
+  if (!audioCtx) {
+    try { audioCtx = new AudioContext(); } catch { return null; }
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+// Sound 1: Launch — rising chirp (300→600Hz, 80ms)
+function playLaunchSound() {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(300, ctx.currentTime);
+  osc.frequency.linearRampToValueAtTime(600, ctx.currentTime + 0.08);
+  gain.gain.setValueAtTime(0.15, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.08);
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.08);
+}
+
+// Sound 2: CDN — mid ping (800Hz, 60ms)
+function playCdnSound() {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(800, ctx.currentTime);
+  gain.gain.setValueAtTime(0.08, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.06);
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.06);
+}
+
+// Sound 3: TCP — low knock (200Hz triangle, 40ms)
+function playTcpSound() {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(200, ctx.currentTime);
+  gain.gain.setValueAtTime(0.12, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.04);
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.04);
+}
+
+// Sound 4: TLS — secure lock (500→800Hz rising, 60ms)
+function playTlsSound() {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(500, ctx.currentTime);
+  osc.frequency.linearRampToValueAtTime(800, ctx.currentTime + 0.06);
+  gain.gain.setValueAtTime(0.10, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.06);
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.06);
+}
+
+// Sound 5: TTFB — data double-beep (1000Hz, 30ms + 30ms gap + 30ms)
+function playTtfbSound() {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  const osc1 = ctx.createOscillator();
+  const gain1 = ctx.createGain();
+  osc1.connect(gain1);
+  gain1.connect(ctx.destination);
+  osc1.type = 'square';
+  osc1.frequency.setValueAtTime(1000, ctx.currentTime);
+  gain1.gain.setValueAtTime(0.06, ctx.currentTime);
+  gain1.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.03);
+  osc1.start(ctx.currentTime);
+  osc1.stop(ctx.currentTime + 0.03);
+  // Second beep after 60ms gap
+  const osc2 = ctx.createOscillator();
+  const gain2 = ctx.createGain();
+  osc2.connect(gain2);
+  gain2.connect(ctx.destination);
+  osc2.type = 'square';
+  osc2.frequency.setValueAtTime(1000, ctx.currentTime + 0.06);
+  gain2.gain.setValueAtTime(0, ctx.currentTime);
+  gain2.gain.setValueAtTime(0.06, ctx.currentTime + 0.06);
+  gain2.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.09);
+  osc2.start(ctx.currentTime + 0.06);
+  osc2.stop(ctx.currentTime + 0.09);
+}
+
+// Sound 6: Arrival — satisfying descending ding (1200→600Hz, 150ms)
+function playArrivalSound() {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(1200, ctx.currentTime);
+  osc.frequency.linearRampToValueAtTime(600, ctx.currentTime + 0.15);
+  gain.gain.setValueAtTime(0.12, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.15);
+}
+
+// Error sound — harsh buzz (150Hz sawtooth, 300ms)
+function playErrorSound() {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(150, ctx.currentTime);
+  osc.frequency.linearRampToValueAtTime(100, ctx.currentTime + 0.3);
+  gain.gain.setValueAtTime(0.10, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.3);
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.3);
+}
+
+// Schedule 6 sounds at average timing offsets, or error sound if data is missing
+function scheduleBatchSounds(results: TestResult[]) {
+  clearSoundTimeouts();
+  const connected = results.filter(r => r.status === 'connected' && r.latencies.length > 0);
+
+  // 100% timeout → error sound
+  if (connected.length === 0) {
+    playErrorSound();
+    return;
+  }
+
+  const avgLatency = connected.reduce((s, r) => s + r.latencies[r.latencies.length - 1], 0) / connected.length;
+  const tcpVals = connected.map(r => r.tcpMs).filter((v): v is number => v != null && v > 0);
+  const tlsVals = connected.map(r => r.tlsHandshakeMs).filter((v): v is number => v != null && v > 0);
+  const httpVals = connected.map(r => r.httpMs).filter((v): v is number => v != null && v > 0);
+
+  const avgTcp = tcpVals.length > 0 ? tcpVals.reduce((a, b) => a + b, 0) / tcpVals.length : 0;
+  const avgTls = tlsVals.length > 0 ? tlsVals.reduce((a, b) => a + b, 0) / tlsVals.length : 0;
+  const avgHttp = httpVals.length > 0 ? httpVals.reduce((a, b) => a + b, 0) / httpVals.length : 0;
+
+  // If any expected average is 0 → error sound instead of all 6
+  if (avgLatency === 0 || avgTcp === 0 || avgTls === 0 || avgHttp === 0) {
+    playErrorSound();
+    return;
+  }
+
+  // Scale all timings by the speed multiplier
+  const m = currentSpeedMult;
+  const half = (avgLatency * m) / 2;
+
+  // Sound 1: Launch (t=0)
+  playLaunchSound();
+  // Sound 2: CDN (t=avgLatency*m/2 — packet reaches Cloudflare)
+  soundTimeouts.push(setTimeout(playCdnSound, half));
+  // Sound 3: TCP (t=half + avgTcp*m — TCP handshake at target)
+  soundTimeouts.push(setTimeout(playTcpSound, half + avgTcp * m));
+  // Sound 4: TLS (t=half + (avgTcp+avgTls)*m — TLS handshake)
+  soundTimeouts.push(setTimeout(playTlsSound, half + (avgTcp + avgTls) * m));
+  // Sound 5: TTFB (t=half + (avgTcp+avgTls+avgHttp)*m — first byte)
+  soundTimeouts.push(setTimeout(playTtfbSound, half + (avgTcp + avgTls + avgHttp) * m));
+  // Sound 6: Arrival (t=avgLatency*m — animation complete)
+  soundTimeouts.push(setTimeout(playArrivalSound, avgLatency * m));
+}
 
 interface Leg {
   from: [number, number];   // [lng, lat]
@@ -133,6 +330,12 @@ interface Ripple {
   rgb: string;
 }
 
+// Demo animation constants
+const DEMO_ANIM_MS = 300;    // fixed 300ms animation duration for demo
+const DEMO_TRAIL_MS = 1500;  // 1.5s trail for demo
+const DEMO_CYCLE_MS = 4000;  // repeat demo every 4s
+let demoActive = false;
+
 // Module-level animation state (single WorldMap instance)
 const packets: Packet[] = [];
 const trails: Trail[] = [];
@@ -150,11 +353,12 @@ function spawnPacket(
   if (!worker) return;
 
   const legs: Leg[] = [];
-  const totalDur = Math.sqrt(latency) * SPEED_MULT;
+  // Animation duration = actual latency × speed multiplier
+  const totalDur = latency * currentSpeedMult;
   const halfLat = Math.max(MIN_LEG_MS, totalDur / 2);
 
   if (home && target) {
-    // Full 2-hop: Home → Worker → Target, each leg = latency/2
+    // Full 2-hop: Home → Worker → Target, each leg = half
     legs.push({
       from: home, to: worker,
       dur: halfLat,
@@ -168,13 +372,13 @@ function spawnPacket(
   } else if (home) {
     legs.push({
       from: home, to: worker,
-      dur: Math.max(MIN_LEG_MS, Math.sqrt(latency) * SPEED_MULT),
+      dur: Math.max(MIN_LEG_MS, totalDur),
       interp: geoInterpolate(home, worker),
     });
   } else if (target) {
     legs.push({
       from: worker, to: target,
-      dur: Math.max(MIN_LEG_MS, Math.sqrt(latency) * SPEED_MULT),
+      dur: Math.max(MIN_LEG_MS, totalDur),
       interp: geoInterpolate(worker, target),
     });
   }
@@ -214,7 +418,7 @@ function drawArc(
   ctx.stroke();
 }
 
-export default function WorldMap({ results, allRegions, homeLocation, targetLocation }: WorldMapProps) {
+export default function WorldMap({ results, allRegions, homeLocation, targetLocation, speedMultiplier, soundEnabled }: WorldMapProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [land, setLand] = useState<FeatureCollection | null>(null);
@@ -223,6 +427,71 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
   const prevSentRef = useRef<Map<string, number>>(new Map());
   const roundStartRef = useRef<number>(0);
   const mouseRef = useRef<[number, number] | null>(null);
+  const latestResultsRef = useRef<TestResult[]>([]);
+  const demoIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [demoTick, setDemoTick] = useState(0);
+
+  // Sync module-level state from props
+  currentSpeedMult = speedMultiplier;
+  currentSoundEnabled = soundEnabled;
+
+  // Check if any real results exist (user has started testing)
+  const hasRealResults = results.some(r => r.sent > 0);
+
+  // Trail fade: use 1500ms in demo mode, otherwise scale with multiplier
+  if (demoActive && !hasRealResults) {
+    currentTrailFade = DEMO_TRAIL_MS;
+  } else {
+    currentTrailFade = Math.round(TRAIL_FADE_NORMAL + TRAIL_FADE_NORMAL / speedMultiplier);
+  }
+
+  // Demo animation: auto-play packets on page load until user starts testing
+  useEffect(() => {
+    if (hasRealResults) {
+      // Stop demo when real testing starts
+      if (demoIntervalRef.current) {
+        clearInterval(demoIntervalRef.current);
+        demoIntervalRef.current = null;
+      }
+      if (demoActive) {
+        packets.length = 0;
+        trails.length = 0;
+        ripples.length = 0;
+        demoActive = false;
+      }
+      return;
+    }
+
+    // Need both locations and regions to demo
+    if (!homeLocation || !targetLocation || allRegions.length === 0) return;
+    if (demoIntervalRef.current) return; // already running
+
+    demoActive = true;
+    const home: [number, number] = [homeLocation.lng, homeLocation.lat];
+    const target: [number, number] = [targetLocation.lng, targetLocation.lat];
+
+    function spawnDemoBatch() {
+      const startAt = Date.now();
+      // Use a raw latency value that yields DEMO_ANIM_MS at the current speed mult
+      const demoLatency = DEMO_ANIM_MS / currentSpeedMult;
+      allRegions.forEach(region => {
+        spawnPacket(region, demoLatency, home, target, false, startAt);
+      });
+      // Trigger a redraw
+      setDemoTick(t => t + 1);
+    }
+
+    // First batch immediately
+    spawnDemoBatch();
+    demoIntervalRef.current = setInterval(spawnDemoBatch, DEMO_CYCLE_MS);
+
+    return () => {
+      if (demoIntervalRef.current) {
+        clearInterval(demoIntervalRef.current);
+        demoIntervalRef.current = null;
+      }
+    };
+  }, [hasRealResults, homeLocation, targetLocation, allRegions]);
 
   // Fetch world topology once
   useEffect(() => {
@@ -237,6 +506,7 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
   }, []);
 
   // Track result updates → spawn packet animations with 5s batch delay
+  latestResultsRef.current = results;
   useEffect(() => {
     const now = Date.now();
     const home: [number, number] | null = homeLocation
@@ -256,18 +526,39 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
     // Detect new round: >4s since last round → new batch
     if (now - roundStartRef.current > 4000) {
       roundStartRef.current = now;
+      // Schedule audio at replay time (reads latest results via ref)
+      clearSoundTimeouts();
+      if (currentSoundEnabled) {
+        soundTimeouts.push(setTimeout(() => {
+          scheduleBatchSounds(latestResultsRef.current);
+        }, REPLAY_DELAY));
+      }
     }
-    // All packets in this round replay at roundStart + 5s
-    const startAt = roundStartRef.current + REPLAY_DELAY;
 
+    // Compute start time: normally roundStart + 5s, but if previous animation
+    // is still playing and duration > 5s, wait for it to finish
+    let startAt = roundStartRef.current + REPLAY_DELAY;
+    if (lastAnimEndTime > startAt && lastAnimEndTime - startAt > 500) {
+      startAt = lastAnimEndTime + 500;
+    }
+
+    // Track the longest animation end time for this batch
+    let maxEnd = startAt;
     results.forEach(r => {
       const prev = prevSentRef.current.get(r.region) || 0;
       if (r.sent > prev) {
         const lat = r.latencies.length > 0 ? r.latencies[r.latencies.length - 1] : 100;
+        const animDur = lat * currentSpeedMult;
+        const pktEnd = startAt + animDur;
+        if (pktEnd > maxEnd) maxEnd = pktEnd;
         spawnPacket(r.region, lat, home, target, r.status === 'failed', startAt);
         prevSentRef.current.set(r.region, r.sent);
       }
     });
+    // If animation duration > 5s, save end time so next batch waits
+    if (maxEnd - startAt > 5000) {
+      lastAnimEndTime = maxEnd;
+    }
   }, [results, homeLocation, targetLocation]);
 
   // Handle resize
@@ -345,12 +636,12 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
     const now = Date.now();
 
     /* ── Cleanup expired trails & ripples ── */
-    while (trails.length && now - trails[0].end > TRAIL_FADE) trails.shift();
+    while (trails.length && now - trails[0].end > currentTrailFade) trails.shift();
     while (ripples.length && now - ripples[0].start > RIPPLE_DUR) ripples.shift();
 
     /* ── Draw fading completed trails ── */
     trails.forEach(trail => {
-      const fade = Math.max(0, 1 - (now - trail.end) / TRAIL_FADE);
+      const fade = Math.max(0, 1 - (now - trail.end) / currentTrailFade);
       const c = trail.failed ? '239,68,68' : trail.rgb;
       trail.legs.forEach((l, i) => {
         const legC = i === 0 ? '255,255,255' : c;
@@ -363,7 +654,8 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
     packets.forEach((pkt, idx) => {
       const leg = pkt.legs[pkt.legIdx];
       const elapsed = now - pkt.legStart;
-      if (elapsed < 0) return; // batch hasn't started yet — waiting for 5s replay
+      if (elapsed < 0) return; // batch hasn't started yet -waiting for 5s replay
+
       const progress = Math.min(1, elapsed / leg.dur);
       const colors = PROVIDER_COLORS[pkt.provider];
       const rgb = colors?.rgb || '255,255,255';
@@ -401,7 +693,7 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
       // Full arc guideline (very dim)
       drawArc(ctx, proj, curLeg.interp, 1, `rgba(${pRgb},0.05)`, 0.4);
 
-      // Traversed portion (brighter — the "ghost trail" behind the particle)
+      // Traversed portion (brighter -the "ghost trail" behind the particle)
       drawArc(ctx, proj, curLeg.interp, curProgress, `rgba(${pRgb},0.22)`, 0.8);
 
       // Particle
@@ -672,7 +964,7 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
     if (packets.length || trails.length || ripples.length) {
       animFrameRef.current = requestAnimationFrame(draw);
     }
-  }, [land, dimensions, results, allRegions, homeLocation, targetLocation]);
+  }, [land, dimensions, results, allRegions, homeLocation, targetLocation, speedMultiplier, demoTick]);
 
   // Render on state changes
   useEffect(() => {
