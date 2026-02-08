@@ -5,6 +5,7 @@
  */
 
 import { connect } from 'cloudflare:sockets';
+import { getColoCity } from './coloMapping';
 
 interface HealthCheckRequest {
   host: string;
@@ -23,6 +24,7 @@ interface HealthCheckResult {
   timestamp: number;
   cfRay?: string;
   colo?: string; // Cloudflare data center code (where Worker executed)
+  coloCity?: string; // City name for the colo
   cfPlacement?: string; // Smart Placement status (local-XXX or remote-XXX)
 }
 
@@ -141,10 +143,12 @@ export default {
         const result = await testTcpPort(body);
 
         // Add Cloudflare metadata
+        const colo = (request.cf as any)?.colo || undefined;
         const enrichedResult: HealthCheckResult = {
           ...result,
           cfRay: request.headers.get('cf-ray') || undefined,
-          colo: (request.cf as any)?.colo || undefined,
+          colo,
+          coloCity: getColoCity(colo),
         };
 
         return new Response(JSON.stringify(enrichedResult), {

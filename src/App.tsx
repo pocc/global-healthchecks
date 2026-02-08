@@ -27,6 +27,7 @@ interface TestResult {
   timestamp?: number;
   error?: string;
   colo?: string;
+  coloCity?: string;
   cfPlacement?: string; // Smart Placement status (local-XXX or remote-XXX)
 }
 
@@ -177,6 +178,7 @@ function App() {
           timestamp?: number;
           error?: string;
           colo?: string;
+          coloCity?: string;
         };
 
         // Update this specific region's result
@@ -192,6 +194,7 @@ function App() {
                   cfPlacement: cfPlacement || undefined,
                   error: data.error,
                   colo: data.colo,
+                  coloCity: data.coloCity,
                 }
               : result
           )
@@ -397,7 +400,10 @@ function App() {
                       Latency
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
-                      Execution Colo
+                      Colo
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
+                      City
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
                       Smart Placement
@@ -435,8 +441,13 @@ function App() {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm text-slate-300">
+                        <span className="text-sm text-slate-300 font-mono">
                           {result.colo || '-'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="text-sm text-slate-300">
+                          {result.coloCity || '-'}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
