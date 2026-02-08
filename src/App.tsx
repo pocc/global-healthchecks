@@ -548,11 +548,11 @@ function App() {
                         {result.cfPlacement ? (
                           result.cfPlacement.startsWith('local') ? (
                             <span className="text-xs px-2 py-1 rounded-full font-medium bg-slate-700/50 text-slate-400">
-                              ⊘ Not Applied ({result.cfPlacement})
+                              ⊘ Not Applied {result.region} ({result.cfPlacement})
                             </span>
                           ) : (
                             <span className="text-xs px-2 py-1 rounded-full font-medium bg-purple-500/20 text-purple-300">
-                              🔀 Forwarded ({result.cfPlacement})
+                              🔀 Forwarded {result.region} ({result.cfPlacement})
                             </span>
                           )
                         ) : (
