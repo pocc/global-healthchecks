@@ -60,12 +60,61 @@ const SMART_PLACEMENT = [
 function App() {
   const [host, setHost] = useState('');
   const [port, setPort] = useState('443');
+  const [hostError, setHostError] = useState('');
   const selectedRegions = [
     ...REGIONAL_SERVICES.map((r) => r.code),
     ...SMART_PLACEMENT.map((r) => r.code)
   ];
   const [results, setResults] = useState<TestResult[]>([]);
   const [isRunning, setIsRunning] = useState(false);
+
+  const validateHost = (value: string): boolean => {
+    if (!value.trim()) {
+      setHostError('');
+      return false;
+    }
+
+    // IPv4 pattern
+    const ipv4Pattern = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+    const ipv4Match = value.match(ipv4Pattern);
+    if (ipv4Match) {
+      const octets = ipv4Match.slice(1).map(Number);
+      if (octets.every(octet => octet >= 0 && octet <= 255)) {
+        setHostError('');
+        return true;
+      }
+      setHostError('Invalid IPv4 address (octets must be 0-255)');
+      return false;
+    }
+
+    // IPv6 pattern (simplified - covers most common cases)
+    const ipv6Pattern = /^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|::([fF]{4}(:0{1,4})?:)?((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.){3}(25[0-5]|(2[0-4]|1?[0-9])?[0-9]))$/;
+    if (ipv6Pattern.test(value)) {
+      setHostError('');
+      return true;
+    }
+
+    // Hostname/domain pattern
+    // Allows: alphanumeric, hyphens, dots, underscores
+    // Must not start/end with hyphen or dot
+    const hostnamePattern = /^([a-zA-Z0-9_]([a-zA-Z0-9\-_]{0,61}[a-zA-Z0-9_])?\.)*[a-zA-Z0-9_]([a-zA-Z0-9\-_]{0,61}[a-zA-Z0-9_])?$/;
+    if (hostnamePattern.test(value)) {
+      setHostError('');
+      return true;
+    }
+
+    setHostError('Invalid hostname, IPv4, or IPv6 address');
+    return false;
+  };
+
+  const handleHostChange = (value: string) => {
+    setHost(value);
+    if (value.trim()) {
+      validateHost(value);
+    } else {
+      setHostError('');
+    }
+  };
 
   const clearResults = () => {
     setResults([]);
@@ -255,10 +304,20 @@ function App() {
                 id="host"
                 type="text"
                 value={host}
-                onChange={(e) => setHost(e.target.value)}
-                placeholder="example.com or 192.168.1.1"
-                className="w-full px-4 py-2 bg-slate-900/50 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                onChange={(e) => handleHostChange(e.target.value)}
+                placeholder="example.com, 192.168.1.1, or 2001:db8::1"
+                className={`w-full px-4 py-2 bg-slate-900/50 border rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 transition-colors ${
+                  hostError
+                    ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
+                    : 'border-slate-600 focus:ring-primary focus:border-transparent'
+                }`}
               />
+              {hostError && (
+                <p className="mt-1 text-sm text-red-400 flex items-center gap-1">
+                  <XCircle className="w-4 h-4" />
+                  {hostError}
+                </p>
+              )}
             </div>
 
             {/* Port Input */}
@@ -283,7 +342,7 @@ function App() {
         <div className="flex gap-3 mb-6">
           <button
             onClick={runTest}
-            disabled={isRunning || !host || !port}
+            disabled={isRunning || !host || !port || !!hostError}
             className="flex items-center gap-2 px-6 py-3 bg-primary hover:bg-primary-dark disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors"
           >
             {isRunning ? (
