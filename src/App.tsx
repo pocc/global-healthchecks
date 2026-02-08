@@ -8,7 +8,6 @@ import {
   Trash2,
   Play,
   Square,
-  Server,
   Download,
   Shield,
   ChevronDown,
@@ -1404,7 +1403,7 @@ function App() {
                 {' '}to act as a <em>Session Manager</em>, explicitly controlling the TLS handshake parameters
                 (min/max version, cipher suites, SNI) that normally live below the application's reach.
                 Because you're choosing <em>which</em> ciphers to offer and measuring handshake latency
-                and protocol compatibility, <strong className="text-white">you</strong> operate at <strong className="text-white">Layer 5</strong>,
+                and protocol compatibility, <span className="text-white uppercase">you</span> operate at <strong className="text-white">Layer 5</strong>,
                 managing the dialogue between client and server, not just consuming it.
               </p>
 
@@ -1420,18 +1419,13 @@ function App() {
         </div>
       )}
 
-      <main className="max-w-7xl mx-auto px-4 py-8">
+      <main className="max-w-7xl mx-auto px-4 py-4">
         {/* Input Section */}
-        <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl border border-slate-700 p-6 mb-6">
-          <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-            <Server className="w-5 h-5 text-primary" />
-            Target Configuration
-          </h2>
-
-          <div className={`grid grid-cols-1 ${isHostnameInput ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-4 mb-4`}>
+        <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl border border-slate-700 p-4 mb-4">
+          <div className={`grid grid-cols-1 ${isHostnameInput ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-3 mb-3`}>
             {/* Host Input */}
             <div>
-              <label htmlFor="host" className="block text-sm font-medium text-slate-300 mb-2">
+              <label htmlFor="host" className="block text-xs font-medium text-slate-400 mb-1">
                 {isHostnameInput ? 'Hostname' : 'Target Hostname / IP'}
               </label>
               <input
@@ -1482,7 +1476,7 @@ function App() {
             {/* Resolved IP (only shown when hostname detected) */}
             {isHostnameInput && (
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
+                <label className="block text-xs font-medium text-slate-400 mb-1">
                   IP Address
                 </label>
                 <input
@@ -1502,7 +1496,7 @@ function App() {
 
             {/* Port Input */}
             <div>
-              <label htmlFor="port" className="block text-sm font-medium text-slate-300 mb-2" title="Only TCP port testing is supported. UDP is not available via Cloudflare Workers Sockets API.">
+              <label htmlFor="port" className="block text-xs font-medium text-slate-400 mb-1" title="Only TCP port testing is supported. UDP is not available via Cloudflare Workers Sockets API.">
                 TCP Port
               </label>
               <input
@@ -1537,7 +1531,7 @@ function App() {
           </div>
 
           {/* Advanced Connection Configuration (collapsible) */}
-          <div className="mb-4">
+          <div className="mb-3">
             <button
               onClick={() => setTcpAdvancedOpen(!tcpAdvancedOpen)}
               className="flex items-center gap-2 text-sm font-medium text-slate-400 hover:text-slate-300 transition-colors mb-2"
@@ -1657,7 +1651,7 @@ function App() {
           </div>
 
           {/* TCP Only / Full Stack Toggle */}
-          <div className="mb-4">
+          <div className="mb-3">
             <div className="inline-flex rounded-lg border border-slate-600 overflow-hidden">
               <button
                 onClick={() => setLayer('l4')}
@@ -2135,11 +2129,11 @@ function App() {
         </div>
 
         {/* Action Buttons */}
-        <div className="flex gap-3 mb-6">
+        <div className="flex gap-2 mb-4">
           {isRunning ? (
             <button
               onClick={stopTest}
-              className="flex items-center gap-2 px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors"
+              className="flex items-center gap-2 px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors"
             >
               <Square className="w-4 h-4" />
               Stop
@@ -2148,9 +2142,9 @@ function App() {
             <button
               onClick={runTest}
               disabled={!canRun}
-              className="flex items-center gap-2 px-6 py-3 bg-primary hover:bg-primary-dark disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors"
+              className="flex items-center gap-2 px-5 py-2.5 bg-primary hover:bg-primary-dark disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors"
             >
-              <Play className="w-5 h-5" />
+              <Play className="w-4 h-4" />
               Run Connection Tests
             </button>
           )}
@@ -2159,17 +2153,17 @@ function App() {
             <>
               <button
                 onClick={downloadCsv}
-                className="flex items-center gap-2 px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white font-semibold rounded-lg transition-colors"
+                className="flex items-center gap-2 px-4 py-2.5 bg-slate-700 hover:bg-slate-600 text-white font-medium rounded-lg transition-colors text-sm"
               >
-                <Download className="w-5 h-5" />
-                Download CSV
+                <Download className="w-4 h-4" />
+                CSV
               </button>
               <button
                 onClick={() => { stopTest(); clearResults(); }}
-                className="flex items-center gap-2 px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white font-semibold rounded-lg transition-colors"
+                className="flex items-center gap-2 px-4 py-2.5 bg-slate-700 hover:bg-slate-600 text-white font-medium rounded-lg transition-colors text-sm"
               >
-                <Trash2 className="w-5 h-5" />
-                Clear Results
+                <Trash2 className="w-4 h-4" />
+                Clear
               </button>
             </>
           )}
@@ -2180,7 +2174,7 @@ function App() {
           <WorldMap results={results} allRegions={selectedRegions} homeLocation={homeLocation} targetLocation={targetLocation} speedMultiplier={speedMultiplier} soundEnabled={soundEnabled} />
           {/* Demo overlay — empty state message over the map */}
           {!results.some(r => r.sent > 0) && (
-            <div className="absolute inset-0 flex items-center justify-center bg-slate-950/50 rounded-xl transition-opacity duration-500">
+            <div className="absolute inset-0 flex items-center justify-center rounded-xl transition-opacity duration-500 pointer-events-none">
               <div className="text-center">
                 <Network className="w-12 h-12 text-slate-500 mx-auto mb-3" />
                 <h3 className="text-lg font-semibold text-slate-300 mb-1">No Test Results Yet</h3>

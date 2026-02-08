@@ -331,9 +331,9 @@ interface Ripple {
 }
 
 // Demo animation constants
-const DEMO_ANIM_MS = 300;    // fixed 300ms animation duration for demo
+const DEMO_ANIM_MS = 2000;   // fixed 2s animation duration for demo
 const DEMO_TRAIL_MS = 1500;  // 1.5s trail for demo
-const DEMO_CYCLE_MS = 4000;  // repeat demo every 4s
+const DEMO_CYCLE_MS = 5000;  // repeat demo every 5s (2s anim + 1.4s stagger + 1.5s trail)
 let demoActive = false;
 
 // Module-level animation state (single WorldMap instance)
@@ -474,8 +474,9 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
       const startAt = Date.now();
       // Use a raw latency value that yields DEMO_ANIM_MS at the current speed mult
       const demoLatency = DEMO_ANIM_MS / currentSpeedMult;
-      allRegions.forEach(region => {
-        spawnPacket(region, demoLatency, home, target, false, startAt);
+      // Stagger packets 10ms apart for a wave effect
+      allRegions.forEach((region, i) => {
+        spawnPacket(region, demoLatency, home, target, false, startAt + i * 10);
       });
       // Trigger a redraw
       setDemoTick(t => t + 1);
