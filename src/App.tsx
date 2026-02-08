@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Handshake,
   Wifi,
-  WifiOff,
+  Network,
   CheckCircle2,
   XCircle,
   Loader2,
@@ -13,6 +13,7 @@ import {
   Download,
 } from 'lucide-react';
 import { COLO_TO_CITY } from './coloMapping';
+import WorldMap from './WorldMap';
 
 interface HealthCheckRequest {
   host: string;
@@ -230,6 +231,23 @@ function App() {
   const dnsAbortRef = useRef<AbortController | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [startTime, setStartTime] = useState<number | null>(null);
+  const [homeLocation, setHomeLocation] = useState<{ lat: number; lng: number; city?: string; country?: string } | null>(null);
+  const [targetLocation, setTargetLocation] = useState<{ lat: number; lng: number; city?: string; country?: string } | null>(null);
+
+  // Fetch user's geolocation from Cloudflare edge on mount
+  useEffect(() => {
+    const geoUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+      ? '/api/geo'
+      : 'https://healthchecks.ross.gg/api/geo';
+    fetch(geoUrl)
+      .then(res => res.json() as Promise<{ lat: number | null; lng: number | null; city?: string; country?: string }>)
+      .then((data) => {
+        if (data.lat != null && data.lng != null) {
+          setHomeLocation({ lat: data.lat, lng: data.lng, city: data.city || undefined, country: data.country || undefined });
+        }
+      })
+      .catch(() => { /* geo lookup failed — no home marker */ });
+  }, []);
 
   // Cleanup interval on unmount
   useEffect(() => {
@@ -320,6 +338,45 @@ function App() {
             return;
           }
         }
+        // ASN check passed — look up target's geolocation (round-robin free providers)
+        const geoProviders = [
+          {
+            url: (ipAddr: string) => `https://ipwho.is/${ipAddr}`,
+            parse: (d: any) => d.success !== false && d.latitude && d.longitude
+              ? { lat: d.latitude, lng: d.longitude, city: d.city, country: d.country }
+              : null,
+          },
+          {
+            url: (ipAddr: string) => `https://freeipapi.com/api/json/${ipAddr}`,
+            parse: (d: any) => d.latitude && d.longitude
+              ? { lat: d.latitude, lng: d.longitude, city: d.cityName, country: d.countryName }
+              : null,
+          },
+          {
+            url: (ipAddr: string) => `https://reallyfreegeoip.org/json/${encodeURIComponent(ipAddr)}`,
+            parse: (d: any) => d.latitude && d.longitude
+              ? { lat: d.latitude, lng: d.longitude, city: d.city, country: d.country_name }
+              : null,
+          },
+        ];
+        let geoResult: { lat: number; lng: number; city?: string; country?: string } | null = null;
+        for (const provider of geoProviders) {
+          try {
+            const geoRes = await fetch(provider.url(ip), { signal: abortController.signal });
+            if (!geoRes.ok) continue;
+            const geoData = await geoRes.json();
+            geoResult = provider.parse(geoData);
+            if (geoResult) break;
+          } catch {
+            // Try next provider
+          }
+        }
+        setTargetLocation({
+          lat: geoResult?.lat ?? 0,
+          lng: geoResult?.lng ?? 0,
+          city: geoResult?.city || undefined,
+          country: geoResult?.country || undefined,
+        });
       } catch (e) {
         if (e instanceof DOMException && e.name === 'AbortError') return;
         // ASN lookup failed — allow the test to proceed
@@ -406,14 +463,22 @@ function App() {
     setResults([]);
   };
 
-  const getEgressColo = (result: TestResult): { colo: string; city: string } => {
+  const getEgressColo = (result: TestResult): { colo: string; city: string; raw?: string } => {
     const regionType = getRegionType(result.region);
     if (regionType === 'regional') {
       return { colo: result.colo || '', city: result.coloCity || '' };
     }
     if (result.cfPlacement) {
-      const colo = result.cfPlacement.split('-').slice(1).join('-').toUpperCase();
-      return { colo, city: COLO_TO_CITY[colo] || '' };
+      const parts = result.cfPlacement.split('-');
+      const prefix = parts[0]?.toLowerCase();
+      if ((prefix === 'local' || prefix === 'remote') && parts.length >= 2) {
+        const colo = parts.slice(1).join('-').toUpperCase();
+        if (colo) {
+          return { colo, city: COLO_TO_CITY[colo] || '' };
+        }
+      }
+      // Non-standard cf-placement format — return raw value for red pillbox
+      return { colo: '', city: '', raw: result.cfPlacement };
     }
     // Fallback: if no cfPlacement but we have ingress, assume same
     if (result.colo) {
@@ -424,7 +489,7 @@ function App() {
 
   const downloadCsv = () => {
     const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
-    const headers = ['Region', 'Sent', 'Loss%', 'Last (ms)', 'Avg (ms)', 'Best (ms)', 'Worst (ms)', 'Ingress Colo', 'Ingress City', 'Egress Colo', 'Egress City'];
+    const headers = ['Region', 'Loss%', 'Last (ms)', 'Avg (ms)', 'Best (ms)', 'Worst (ms)', 'Ingress Colo', 'Ingress City', 'Egress Colo', 'Egress City'];
     const rows = results.map((r) => {
       const egress = getEgressColo(r);
       const loss = r.sent > 0 ? ((r.sent - r.received) / r.sent * 100).toFixed(1) : '';
@@ -434,11 +499,10 @@ function App() {
       const worst = r.latencies.length > 0 ? String(Math.max(...r.latencies)) : '';
       return [
         escape(r.regionName),
-        String(r.sent),
         loss,
         last, avg, best, worst,
-        r.colo || '', r.coloCity || '',
-        egress.colo, egress.city,
+        r.colo || '', escape(r.coloCity || ''),
+        egress.colo, escape(egress.city),
       ].join(',');
     });
     const csv = [headers.join(','), ...rows].join('\n');
@@ -478,10 +542,10 @@ function App() {
     if (type !== currentGroup) {
       currentGroup = type;
       const labels: Record<string, { label: string; color: string }> = {
-        regional: { label: 'Cloudflare Regional Services', color: 'border-orange-500/40 bg-orange-500/5 text-orange-300' },
-        aws: { label: 'AWS Placement Hints', color: 'border-teal-500/40 bg-teal-500/5 text-teal-300' },
-        gcp: { label: 'GCP Placement Hints', color: 'border-blue-500/40 bg-blue-500/5 text-blue-300' },
-        azure: { label: 'Azure Placement Hints', color: 'border-sky-500/40 bg-sky-500/5 text-sky-300' },
+        regional: { label: 'Cloudflare Regional Services', color: 'border-[#F38020]/40 bg-[#F38020]/5 text-[#F38020]' },
+        aws: { label: 'AWS Placement Hints', color: 'border-[#FACC15]/40 bg-[#FACC15]/5 text-[#FACC15]' },
+        gcp: { label: 'GCP Placement Hints', color: 'border-[#34A853]/40 bg-[#34A853]/5 text-[#34A853]' },
+        azure: { label: 'Azure Placement Hints', color: 'border-[#0078D4]/40 bg-[#0078D4]/5 text-[#0078D4]' },
       };
       groupBoundaries.set(index, labels[type]);
     }
@@ -605,7 +669,7 @@ function App() {
             <div>
               <h1 className="text-2xl font-bold text-white">Handshake Speed</h1>
               <p className="text-slate-400 text-sm">
-                Test connectivity across global regions in real-time
+                Test Global Cloudflare TCP connectivity to your origin server
               </p>
             </div>
           </div>
@@ -837,6 +901,11 @@ function App() {
           )}
         </div>
 
+        {/* World Map */}
+        <div className="mb-6">
+          <WorldMap results={results} allRegions={selectedRegions} homeLocation={homeLocation} targetLocation={targetLocation} />
+        </div>
+
         {/* Results Dashboard */}
         {results.length > 0 && (
           <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl border border-slate-700 overflow-hidden">
@@ -844,6 +913,11 @@ function App() {
               <h2 className="text-sm font-semibold text-white flex items-center gap-2">
                 <Wifi className="w-4 h-4 text-primary" />
                 {host}:{port}
+                {results.length > 0 && (
+                  <span className="text-slate-400 font-normal">
+                    &middot; {Math.max(...results.map(r => r.sent))} pings sent
+                  </span>
+                )}
                 {isRunning && <Loader2 className="w-3 h-3 animate-spin text-slate-400" />}
               </h2>
               <div className="text-xs text-slate-400">
@@ -857,7 +931,6 @@ function App() {
                 <thead className="bg-slate-900/50 text-xs">
                   <tr>
                     <th className="px-3 py-1.5 text-left font-medium text-slate-400 uppercase tracking-wider">Region</th>
-                    <th className="px-3 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-14">Sent</th>
                     <th className="px-3 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-16">Loss%</th>
                     <th className="px-3 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-16">Last</th>
                     <th className="px-3 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-16">Avg</th>
@@ -881,10 +954,10 @@ function App() {
                     const isEvenRow = groupRowIndex % 2 === 0;
                     groupRowIndex++;
                     const rowAccent = {
-                      regional: 'border-l-2 border-l-orange-500/30',
-                      aws: 'border-l-2 border-l-teal-500/30',
-                      gcp: 'border-l-2 border-l-blue-500/30',
-                      azure: 'border-l-2 border-l-sky-500/30',
+                      regional: 'border-l-2 border-l-[#F38020]/30',
+                      aws: 'border-l-2 border-l-[#FACC15]/30',
+                      gcp: 'border-l-2 border-l-[#34A853]/30',
+                      azure: 'border-l-2 border-l-[#0078D4]/30',
                     }[regionType];
                     const stripeBg = isEvenRow ? '' : 'bg-slate-800/30';
 
@@ -898,7 +971,7 @@ function App() {
                     return (<>
                     {group && (
                       <tr key={`group-${index}`}>
-                        <td colSpan={9} className={`px-3 py-1.5 text-xs font-semibold uppercase tracking-wider border-l-2 ${group.color}`}>
+                        <td colSpan={8} className={`px-3 py-1.5 text-xs font-semibold uppercase tracking-wider border-l-2 ${group.color}`}>
                           {group.label}
                         </td>
                       </tr>
@@ -914,9 +987,6 @@ function App() {
                             {result.regionName}
                           </span>
                         </div>
-                      </td>
-                      <td className="px-3 py-1.5 text-right text-slate-300">
-                        {result.sent || '-'}
                       </td>
                       <td className={`px-3 py-1.5 text-right ${loss === 0 ? 'text-green-400' : loss < 50 ? 'text-yellow-400' : 'text-red-400'}`}>
                         {result.sent > 0 ? `${loss.toFixed(0)}%` : '-'}
@@ -941,7 +1011,9 @@ function App() {
                       <td className="px-3 py-1.5 whitespace-nowrap text-slate-300">
                         {egress.colo
                           ? <><span>{egress.colo}</span><span className="text-slate-500"> ({egress.city || '?'})</span></>
-                          : '-'}
+                          : egress.raw
+                            ? <span className="bg-red-500/20 border border-red-500/40 text-red-300 text-xs px-2 py-0.5 rounded-full">{egress.raw}</span>
+                            : '-'}
                       </td>
                     </tr>
                     </>);
@@ -970,11 +1042,11 @@ function App() {
 
         {/* Empty State */}
         {results.length === 0 && (
-          <div className="bg-slate-800/30 backdrop-blur-sm rounded-xl border border-slate-700 p-12 text-center">
-            <WifiOff className="w-16 h-16 text-slate-600 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold text-slate-300 mb-2">No Test Results Yet</h3>
-            <p className="text-slate-500">
-              Configure your target and select regions to start testing connectivity
+          <div className="bg-slate-800/30 backdrop-blur-sm rounded-xl border border-slate-700 p-8 text-center">
+            <Network className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+            <h3 className="text-lg font-semibold text-slate-300 mb-1">No Test Results Yet</h3>
+            <p className="text-slate-500 text-sm">
+              Configure your target above and click Run to start testing TCP connectivity
             </p>
           </div>
         )}

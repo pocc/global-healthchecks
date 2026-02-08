@@ -1,0 +1,105 @@
+# Session: UI Enhancements & World Map Dashboard
+## Date: February 8, 2026
+
+## Overview
+
+This session added a Canvas-based world map dashboard, provider-branded colors, geolocation markers, and several UX refinements to the frontend.
+
+## Features Implemented
+
+### 1. World Map Dashboard (`WorldMap.tsx`)
+
+Interactive Canvas map using d3-geo Natural Earth 1 projection showing all 143 region endpoints as dots.
+
+- **Land rendering**: Fetches `world-atlas@2/land-110m.json` from jsDelivr, converts TopoJSON → GeoJSON via `topojson-client`
+- **Region dots**: 143 dots positioned via `regionCoordinates.ts` (lat/lng for every endpoint)
+- **Pulse animation**: 1.5s expanding ring on each new ping result, driven by `requestAnimationFrame`
+- **Graticule**: Subtle grid lines every 30° longitude/latitude
+
+**Dependencies added**: `d3-geo`, `topojson-client`, `@types/d3-geo`, `@types/topojson-client`, `@types/topojson-specification`
+
+### 2. Provider Brand Colors
+
+Map dots, pulse animations, glow rings, and table separator rows are colored by cloud provider. Colors were revised for visual distinctness on dark backgrounds:
+
+| Provider | Hex | Visual | Usage |
+|----------|-----|--------|-------|
+| Cloudflare | `#F38020` | Orange | Regional Services dots + table rows |
+| AWS | `#FACC15` | Yellow | AWS placement dots + table rows |
+| GCP | `#34A853` | Green | GCP placement dots + table rows |
+| Azure | `#0078D4` | Blue | Azure placement dots + table rows |
+
+Table rows have a left accent border (`border-l-2 border-l-[#COLOR]/30`) and group separator rows with provider-specific background tints.
+
+### 3. Home Location Marker
+
+- Worker endpoint `/api/geo` returns caller's location from `request.cf` (latitude, longitude, city, country, colo)
+- Frontend fetches on mount, draws white diamond icon on map
+- City name shown in legend (not on map, to avoid crowding nearby dots)
+- Uses Cloudflare's built-in geolocation — no external API needed
+
+### 4. Target Location Marker
+
+- After ASN validation passes, round-robins through 3 free GeoIP providers until one returns valid coordinates:
+  1. **ipwho.is** — best CORS support, clean field names, 10k/month
+  2. **freeipapi.com** — confirmed CORS, 60/min, non-standard field names (`cityName`, `countryName`)
+  3. **reallyfreegeoip.org** — fallback, questionable CORS headers
+- If all 3 fail, falls back to 0,0 (Gulf of Guinea) so the marker is always visible
+- Draws red crosshair icon on map: circle + 4 extending lines + center dot
+- City name shown in legend
+
+### 5. Map Legend
+
+Bottom-left corner legend (always visible):
+- Cloudflare (orange dot), AWS (yellow dot), GCP (green dot), Azure (blue dot)
+- You (white diamond) — shows city name from Cloudflare edge geolocation
+- Target (red crosshair) — shows city name from GeoIP lookup
+
+### 6. Egress Colo Bug Fix
+
+`getEgressColo()` now handles non-standard `cf-placement` header values:
+- Standard: `local-IAH` or `remote-FRA` → parsed normally
+- Non-standard: `local` (no colo suffix) → returns `raw` field, displayed in red pillbox
+
+### 7. Sent Column Removal
+
+Ping count moved from dedicated table column to header bar: `host:port · N pings sent`. Reduces table width for dense 143-row display.
+
+### 8. Empty State Icon
+
+Changed from `WifiOff` to `Network` (lucide-react) — more appropriate for WAN/TCP testing context.
+
+### 9. CSV Export Fix
+
+City names containing commas (e.g., "Houston, TX") now properly escaped with double-quote wrapping in CSV output.
+
+## Files Modified
+
+| File | Changes |
+|------|---------|
+| `src/WorldMap.tsx` | New file — Canvas map with dots, markers, legend |
+| `src/regionCoordinates.ts` | New file — lat/lng for all 143 endpoints |
+| `src/App.tsx` | WorldMap integration, home/target geolocation, provider colors in table, CSV fix |
+| `src/worker.ts` | Added `/api/geo` endpoint |
+| `package.json` | Added d3-geo, topojson-client dependencies |
+
+## Technical Decisions
+
+### Why Canvas instead of SVG?
+143 dots with pulse animations at 60fps. Canvas is more performant for this many animated elements. SVG would create 143+ DOM nodes with CSS animations.
+
+### Why round-robin 3 GeoIP providers?
+No single free GeoIP provider is reliable enough. `reallyfreegeoip.org` has questionable CORS headers and low trust scores. By trying `ipwho.is` first (best CORS), then `freeipapi.com`, then `reallyfreegeoip.org`, we maximize the chance of getting coordinates. If all fail, we fall back to 0,0 so the crosshair is always visible on the map. Home location uses Cloudflare's `request.cf` (authoritative, no external dependency).
+
+### Why not @heroicons?
+Avoided adding another dependency. All icons use lucide-react (already installed) or inline Canvas drawing.
+
+## Known Issues
+
+- Cloudflare API token expired during deployment — `wrangler login` required to re-authenticate
+- All 3 free GeoIP providers may fail; crosshair falls back to 0,0 (Gulf of Guinea)
+
+---
+
+**Session Version**: 1.1
+**Last Updated**: February 8, 2026

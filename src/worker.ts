@@ -108,6 +108,24 @@ export default {
       return new Response(null, { headers: corsHeaders });
     }
 
+    // Geo endpoint — return caller's location from Cloudflare edge
+    if (url.pathname === '/api/geo' && request.method === 'GET') {
+      const cf = request.cf as any;
+      return new Response(JSON.stringify({
+        lat: cf?.latitude ? parseFloat(cf.latitude) : null,
+        lng: cf?.longitude ? parseFloat(cf.longitude) : null,
+        city: cf?.city || null,
+        country: cf?.country || null,
+        colo: cf?.colo || null,
+      }), {
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store',
+          ...corsHeaders,
+        },
+      });
+    }
+
     // API endpoint for health checks
     if (url.pathname === '/api/check' && request.method === 'POST') {
       try {
