@@ -546,13 +546,15 @@ function App() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         {result.cfPlacement ? (
-                          <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                            result.cfPlacement.startsWith('local')
-                              ? 'bg-blue-500/20 text-blue-300'
-                              : 'bg-purple-500/20 text-purple-300'
-                          }`}>
-                            {result.cfPlacement.startsWith('local') ? '📍 Local' : '🔀 Forwarded'} ({result.cfPlacement})
-                          </span>
+                          result.cfPlacement.startsWith('local') ? (
+                            <span className="text-xs px-2 py-1 rounded-full font-medium bg-slate-700/50 text-slate-400">
+                              ⊘ Not Applied ({result.cfPlacement})
+                            </span>
+                          ) : (
+                            <span className="text-xs px-2 py-1 rounded-full font-medium bg-purple-500/20 text-purple-300">
+                              🔀 Forwarded ({result.cfPlacement})
+                            </span>
+                          )
                         ) : (
                           <span className="text-sm text-slate-500">-</span>
                         )}
