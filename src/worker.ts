@@ -22,7 +22,8 @@ interface HealthCheckResult {
   error?: string;
   timestamp: number;
   cfRay?: string;
-  colo?: string; // Cloudflare data center code
+  colo?: string; // Cloudflare data center code (where Worker executed)
+  cfPlacement?: string; // Smart Placement status (local-XXX or remote-XXX)
 }
 
 /**

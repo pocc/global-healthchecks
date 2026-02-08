@@ -246,6 +246,28 @@ function App() {
         </div>
       </header>
 
+      {/* Info Banner */}
+      <div className="max-w-7xl mx-auto px-4 py-4">
+        <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <div className="text-blue-400 mt-0.5">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-blue-300 mb-1">Smart Placement Explained</h3>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                These endpoints use <span className="font-semibold text-blue-300">Smart Placement hints</span> – suggestions to Cloudflare about where to execute the Worker.
+                Cloudflare may override hints for performance, routing requests to the nearest data center or closer to backend services.
+                The <span className="font-semibold">Execution Colo</span> column shows where the Worker actually ran (not where you requested).
+                For guaranteed regional execution, <a href="https://developers.cloudflare.com/workers/configuration/smart-placement/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">Enterprise Regional Services</a> are required.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <main className="max-w-7xl mx-auto px-4 py-8">
         {/* Input Section */}
         <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl border border-slate-700 p-6 mb-6">
@@ -338,11 +360,11 @@ function App() {
                   <h3 className="text-sm font-semibold text-white flex items-center gap-2">
                     🌍 Regional Services
                     <span className="px-2 py-0.5 bg-primary/20 text-primary text-xs rounded-full">
-                      Recommended
+                      Smart Placement Hints
                     </span>
                   </h3>
                   <p className="text-xs text-slate-400 mt-1">
-                    User-friendly regional endpoints for specific countries
+                    Suggest regional execution (Cloudflare may override for performance)
                   </p>
                 </div>
                 <button
@@ -475,7 +497,7 @@ function App() {
                       Latency
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
-                      Data Center
+                      Execution Colo
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
                       Timestamp
