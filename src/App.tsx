@@ -11,6 +11,7 @@ import {
   Play,
   Server,
 } from 'lucide-react';
+import { COLO_TO_CITY } from './coloMapping';
 
 interface HealthCheckRequest {
   host: string;
@@ -194,6 +195,7 @@ function App() {
   const [host, setHost] = useState('amazon.com');
   const [port, setPort] = useState('443');
   const [hostError, setHostError] = useState('');
+  const [portError, setPortError] = useState('');
   const selectedRegions = [
     ...REGIONAL_SERVICES.map((r) => r.code),
     ...AWS_PLACEMENT.map((r) => r.code),
@@ -202,6 +204,38 @@ function App() {
   ];
   const [results, setResults] = useState<TestResult[]>([]);
   const [isRunning, setIsRunning] = useState(false);
+
+  // Cloudflare IPv4 CIDR ranges (from https://www.cloudflare.com/ips/)
+  const CLOUDFLARE_IPV4_CIDRS = [
+    '173.245.48.0/20', '103.21.244.0/22', '103.22.200.0/22', '103.31.4.0/22',
+    '141.101.64.0/18', '108.162.192.0/18', '190.93.240.0/20', '188.114.96.0/20',
+    '197.234.240.0/22', '198.41.128.0/17', '162.158.0.0/15', '104.16.0.0/13',
+    '104.24.0.0/14', '172.64.0.0/13', '131.0.72.0/22',
+  ];
+
+  // Cloudflare IPv6 prefixes
+  const CLOUDFLARE_IPV6_PREFIXES = [
+    '2400:cb00:', '2606:4700:', '2803:f800:', '2405:b500:',
+    '2405:8100:', '2a06:98c', '2c0f:f248:',
+  ];
+
+  const ipv4ToInt = (ip: string): number => {
+    return ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
+  };
+
+  const isCloudflareIPv4 = (ip: string): boolean => {
+    const ipInt = ipv4ToInt(ip);
+    return CLOUDFLARE_IPV4_CIDRS.some((cidr) => {
+      const [network, bits] = cidr.split('/');
+      const mask = (~0 << (32 - parseInt(bits, 10))) >>> 0;
+      return (ipInt & mask) === (ipv4ToInt(network) & mask);
+    });
+  };
+
+  const isCloudflareIPv6 = (ip: string): boolean => {
+    const lower = ip.toLowerCase();
+    return CLOUDFLARE_IPV6_PREFIXES.some((prefix) => lower.startsWith(prefix));
+  };
 
   const validateHost = (value: string): boolean => {
     if (!value.trim()) {
@@ -214,25 +248,33 @@ function App() {
     const ipv4Match = value.match(ipv4Pattern);
     if (ipv4Match) {
       const octets = ipv4Match.slice(1).map(Number);
-      if (octets.every(octet => octet >= 0 && octet <= 255)) {
-        setHostError('');
-        return true;
+      if (!octets.every(octet => octet >= 0 && octet <= 255)) {
+        setHostError('Invalid IPv4 address (octets must be 0-255)');
+        return false;
       }
-      setHostError('Invalid IPv4 address (octets must be 0-255)');
-      return false;
+      if (isCloudflareIPv4(value)) {
+        setHostError('This IP belongs to Cloudflare\'s network (AS13335). Connections to Cloudflare IPs will be blocked for security reasons.');
+        return false;
+      }
+      setHostError('');
+      return true;
     }
 
     // IPv6 pattern (simplified - covers most common cases)
     const ipv6Pattern = /^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|::([fF]{4}(:0{1,4})?:)?((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.){3}(25[0-5]|(2[0-4]|1?[0-9])?[0-9]))$/;
     if (ipv6Pattern.test(value)) {
+      if (isCloudflareIPv6(value)) {
+        setHostError('This IP belongs to Cloudflare\'s network (AS13335). Connections to Cloudflare IPs will be blocked for security reasons.');
+        return false;
+      }
       setHostError('');
       return true;
     }
 
     // Hostname/domain pattern
-    // Allows: alphanumeric, hyphens, dots, underscores
-    // Must not start/end with hyphen or dot
-    const hostnamePattern = /^([a-zA-Z0-9_]([a-zA-Z0-9\-_]{0,61}[a-zA-Z0-9_])?\.)*[a-zA-Z0-9_]([a-zA-Z0-9\-_]{0,61}[a-zA-Z0-9_])?$/;
+    // Allows: alphanumeric, hyphens, dots
+    // Labels must start/end with alphanumeric, max 63 chars each
+    const hostnamePattern = /^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/;
     if (hostnamePattern.test(value)) {
       setHostError('');
       return true;
@@ -250,6 +292,24 @@ function App() {
       setHostError('');
     }
   };
+
+  const handlePortChange = (value: string) => {
+    // Strip non-digit characters
+    const digits = value.replace(/\D/g, '');
+    setPort(digits);
+    if (!digits) {
+      setPortError('');
+      return;
+    }
+    const num = parseInt(digits, 10);
+    if (num < 1 || num > 65535) {
+      setPortError('Port must be between 1 and 65535');
+    } else {
+      setPortError('');
+    }
+  };
+
+  const canRun = !isRunning && !!host.trim() && !!port && !hostError && !portError;
 
   const clearResults = () => {
     setResults([]);
@@ -430,26 +490,118 @@ function App() {
         </div>
       </header>
 
-      {/* Info Banner */}
-      <div className="max-w-7xl mx-auto px-4 py-4">
-        <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
-          <div className="flex items-start gap-3">
-            <div className="text-blue-400 mt-0.5">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      {/* About / How It Works (collapsible) */}
+      <div className="max-w-7xl mx-auto px-4 pt-6">
+        <details className="group bg-slate-800/50 backdrop-blur-sm rounded-xl border border-slate-700">
+          <summary className="px-6 py-4 cursor-pointer select-none flex items-center justify-between text-sm font-semibold text-slate-300 hover:text-white transition-colors list-none">
+            <span className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
+              About This Tool
+            </span>
+            <svg className="w-4 h-4 text-slate-400 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </summary>
+          <div className="px-6 pb-6 border-t border-slate-700 pt-4 space-y-4">
+            <p className="text-sm text-slate-300 leading-relaxed">
+              This tool tests TCP port connectivity from <strong className="text-white">143 Cloudflare Worker endpoints</strong> deployed
+              across the globe. Each endpoint opens a raw TCP socket to your target host:port and measures the round-trip latency
+              from that location. Results show which data center handled the request and how long the connection took.
+            </p>
+
+            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Two Placement Strategies</h4>
+            <p className="text-sm text-slate-300 leading-relaxed">
+              The 143 endpoints use two different Cloudflare mechanisms to control <em>where</em> the Worker executes:
+            </p>
+
+            {/* Diagram: Regional Services vs Targeted Placement */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+              {/* Regional Services */}
+              <div className="bg-slate-900/50 rounded-lg border border-orange-500/20 p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-orange-500"></span>
+                  <span className="font-semibold text-orange-300 text-sm">Regional Services</span>
+                  <span className="text-slate-500">(10 endpoints)</span>
+                </div>
+                <div className="space-y-2 text-slate-400">
+                  {/* Flow */}
+                  <div className="flex items-center gap-2">
+                    <div className="bg-slate-700 rounded px-2 py-1 text-slate-300 whitespace-nowrap">Your Request</div>
+                    <span className="text-slate-600">&#8594;</span>
+                    <div className="bg-slate-700 rounded px-2 py-1 text-slate-300 whitespace-nowrap">Nearest Edge</div>
+                  </div>
+                  <div className="flex items-center gap-2 pl-4">
+                    <span className="text-orange-500">&#8595;</span>
+                    <span className="text-orange-400 italic">guaranteed forwarding</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="bg-orange-500/20 border border-orange-500/30 rounded px-2 py-1 text-orange-300 whitespace-nowrap">Target Region (e.g. EU, JP)</div>
+                    <span className="text-slate-600">&#8594;</span>
+                    <div className="bg-slate-700 rounded px-2 py-1 text-slate-300 whitespace-nowrap">TCP Test</div>
+                  </div>
+                </div>
+                <div className="text-slate-500 pt-1 border-t border-slate-700">
+                  <strong className="text-orange-400">Guarantee:</strong> Worker <em>must</em> execute within the specified country/region.
+                  Uses codes like <code className="bg-slate-800 px-1 rounded text-orange-300">us</code>, <code className="bg-slate-800 px-1 rounded text-orange-300">eu</code>, <code className="bg-slate-800 px-1 rounded text-orange-300">jp</code>.
+                </div>
+              </div>
+
+              {/* Targeted Placement */}
+              <div className="bg-slate-900/50 rounded-lg border border-teal-500/20 p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-teal-500"></span>
+                  <span className="font-semibold text-teal-300 text-sm">Targeted Placement</span>
+                  <span className="text-slate-500">(133 endpoints)</span>
+                </div>
+                <div className="space-y-2 text-slate-400">
+                  {/* Flow */}
+                  <div className="flex items-center gap-2">
+                    <div className="bg-slate-700 rounded px-2 py-1 text-slate-300 whitespace-nowrap">Your Request</div>
+                    <span className="text-slate-600">&#8594;</span>
+                    <div className="bg-slate-700 rounded px-2 py-1 text-slate-300 whitespace-nowrap">Nearest Edge</div>
+                  </div>
+                  <div className="flex items-center gap-2 pl-4">
+                    <span className="text-teal-500">&#8595;</span>
+                    <span className="text-teal-400 italic">routed near cloud provider region</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="bg-teal-500/20 border border-teal-500/30 rounded px-2 py-1 text-teal-300 whitespace-nowrap">Cloud Region (e.g. aws:us-east-1)</div>
+                    <span className="text-slate-600">&#8594;</span>
+                    <div className="bg-slate-700 rounded px-2 py-1 text-slate-300 whitespace-nowrap">TCP Test</div>
+                  </div>
+                </div>
+                <div className="text-slate-500 pt-1 border-t border-slate-700">
+                  <strong className="text-teal-400">Hint-based:</strong> Cloudflare places the Worker near the specified cloud region.
+                  Uses codes like <code className="bg-slate-800 px-1 rounded text-teal-300">aws:us-east-1</code>, <code className="bg-slate-800 px-1 rounded text-teal-300">gcp:europe-west1</code>.
+                </div>
+              </div>
             </div>
-            <div className="flex-1">
-              <h3 className="text-sm font-semibold text-blue-300 mb-1">Smart Placement Explained</h3>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                These endpoints use <span className="font-semibold text-blue-300">Smart Placement hints</span> – suggestions to Cloudflare about where to execute the Worker.
-                Cloudflare may override hints for performance, routing requests to the nearest data center or closer to backend services.
-                The <span className="font-semibold">Execution Colo</span> column shows where the Worker actually ran (not where you requested).
-                For guaranteed regional execution, <a href="https://developers.cloudflare.com/workers/configuration/smart-placement/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">Enterprise Regional Services</a> are required.
-              </p>
+
+            <p className="text-sm text-slate-300 leading-relaxed">
+              The <strong className="text-white">Colo</strong> column shows the IATA code of the data center that actually handled the request.
+              The <strong className="text-white">Smart Placement</strong> column shows the <code className="bg-slate-800 px-1 rounded text-slate-300">cf-placement</code> header
+              — <span className="text-purple-300">Forwarded</span> means Cloudflare moved the Worker to the target region,
+              while <span className="text-slate-400">Not Applied</span> means it ran locally.
+            </p>
+
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 text-xs text-amber-300 leading-relaxed">
+              <strong className="text-amber-200">Note:</strong> Connections to IPs within Cloudflare's own network (AS13335) are blocked for security reasons.
+              If you enter a Cloudflare IP, the test will be disabled. Domains that resolve to Cloudflare IPs (e.g. sites using Cloudflare CDN)
+              may fail at the worker level since the TCP socket cannot connect back into Cloudflare's edge.
+            </div>
+
+            <div className="flex gap-3 text-xs pt-1">
+              <a href="https://developers.cloudflare.com/workers/configuration/smart-placement/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">
+                Targeted Placement Docs &#8599;
+              </a>
+              <a href="https://developers.cloudflare.com/workers/configuration/regions/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">
+                Regional Services Docs &#8599;
+              </a>
             </div>
           </div>
-        </div>
+        </details>
       </div>
 
       <main className="max-w-7xl mx-auto px-4 py-8">
@@ -471,6 +623,9 @@ function App() {
                 type="text"
                 value={host}
                 onChange={(e) => handleHostChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && canRun) runTest();
+                }}
                 placeholder="example.com, 192.168.1.1, or 2001:db8::1"
                 className={`w-full px-4 py-2 bg-slate-900/50 border rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 transition-colors ${
                   hostError
@@ -493,13 +648,27 @@ function App() {
               </label>
               <input
                 id="port"
-                type="number"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 value={port}
-                onChange={(e) => setPort(e.target.value)}
-                min="1"
-                max="65535"
-                className="w-full px-4 py-2 bg-slate-900/50 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                onChange={(e) => handlePortChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && canRun) runTest();
+                }}
+                placeholder="1-65535"
+                className={`w-full px-4 py-2 bg-slate-900/50 border rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 transition-colors ${
+                  portError
+                    ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
+                    : 'border-slate-600 focus:ring-primary focus:border-transparent'
+                }`}
               />
+              {portError && (
+                <p className="mt-1 text-sm text-red-400 flex items-center gap-1">
+                  <XCircle className="w-4 h-4" />
+                  {portError}
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -508,7 +677,7 @@ function App() {
         <div className="flex gap-3 mb-6">
           <button
             onClick={runTest}
-            disabled={isRunning || !host || !port || !!hostError}
+            disabled={!canRun}
             className="flex items-center gap-2 px-6 py-3 bg-primary hover:bg-primary-dark disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors"
           >
             {isRunning ? (
@@ -563,13 +732,10 @@ function App() {
                       Latency
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
-                      Colo
+                      Ingress Colo (City)
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
-                      City
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
-                      Smart Placement
+                      Egress Colo (City)
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
                       Timestamp
@@ -603,7 +769,7 @@ function App() {
                     return (<>
                     {group && (
                       <tr key={`group-${index}`}>
-                        <td colSpan={8} className={`px-6 py-2 text-xs font-semibold uppercase tracking-wider border-l-2 ${group.color}`}>
+                        <td colSpan={7} className={`px-6 py-2 text-xs font-semibold uppercase tracking-wider border-l-2 ${group.color}`}>
                           {group.label}
                         </td>
                       </tr>
@@ -631,33 +797,30 @@ function App() {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm text-slate-300 font-mono">
-                          {result.colo || '-'}
+                        <span className="text-sm text-slate-300">
+                          {result.colo
+                            ? <><span className="font-mono">{result.colo}</span>{result.coloCity ? ` (${result.coloCity})` : ''}</>
+                            : '-'}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className="text-sm text-slate-300">
-                          {result.coloCity || '-'}
+                          {(() => {
+                            if (regionType === 'regional') {
+                              // Regional Services: egress = ingress (guaranteed region)
+                              return result.colo
+                                ? <><span className="font-mono">{result.colo}</span>{result.coloCity ? ` (${result.coloCity})` : ''}</>
+                                : '-';
+                            }
+                            if (result.cfPlacement) {
+                              // Extract IATA code from "remote-IAD" or "local-IAH"
+                              const egressColo = result.cfPlacement.split('-').slice(1).join('-').toUpperCase();
+                              const egressCity = COLO_TO_CITY[egressColo] || '';
+                              return <><span className="font-mono">{egressColo}</span>{egressCity ? ` (${egressCity})` : ''}</>;
+                            }
+                            return '-';
+                          })()}
                         </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        {result.cfPlacement ? (
-                          result.cfPlacement.startsWith('local') ? (
-                            <span className="text-xs px-2 py-1 rounded-full font-medium bg-slate-700/50 text-slate-400">
-                              ⊘ Not Applied {result.region} ({result.cfPlacement})
-                            </span>
-                          ) : (
-                            <span className="text-xs px-2 py-1 rounded-full font-medium bg-purple-500/20 text-purple-300">
-                              🔀 Forwarded {result.region} ({result.cfPlacement})
-                            </span>
-                          )
-                        ) : regionType === 'regional' ? (
-                          <span className="text-xs px-2 py-1 rounded-full font-medium bg-orange-500/15 text-orange-400">
-                            N/A — Regional Service
-                          </span>
-                        ) : (
-                          <span className="text-sm text-slate-500">-</span>
-                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className="text-sm text-slate-400">
