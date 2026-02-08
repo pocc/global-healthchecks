@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  Globe,
+  Handshake,
   Wifi,
   WifiOff,
   CheckCircle2,
@@ -489,11 +489,6 @@ function App() {
 
   const runSingleRound = () => {
     selectedRegions.forEach((regionCode, index) => {
-      // Increment sent
-      setResults((prev) =>
-        prev.map((r, i) => i === index ? { ...r, sent: r.sent + 1 } : r)
-      );
-
       const checkRequest: HealthCheckRequest = {
         host: host.trim(),
         port: parseInt(port),
@@ -525,6 +520,7 @@ function App() {
               i === index
                 ? {
                     ...r,
+                    sent: r.sent + 1,
                     status: data.success ? 'connected' as const : 'failed' as const,
                     received: data.success ? r.received + 1 : r.received,
                     latencies: data.latencyMs !== undefined ? [...r.latencies, data.latencyMs] : r.latencies,
@@ -543,6 +539,7 @@ function App() {
               i === index
                 ? {
                     ...r,
+                    sent: r.sent + 1,
                     status: 'failed' as const,
                     lastError: error instanceof Error ? error.message : 'Request failed',
                   }
@@ -603,10 +600,10 @@ function App() {
         <div className="max-w-7xl mx-auto px-4 py-6">
           <div className="flex items-center gap-3">
             <div className="bg-primary/10 p-3 rounded-lg">
-              <Globe className="w-8 h-8 text-primary" />
+              <Handshake className="w-8 h-8 text-primary" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-white">Network Connection Tester</h1>
+              <h1 className="text-2xl font-bold text-white">Handshake Speed</h1>
               <p className="text-slate-400 text-sm">
                 Test connectivity across global regions in real-time
               </p>
@@ -631,9 +628,14 @@ function App() {
           </summary>
           <div className="px-6 pb-6 border-t border-slate-700 pt-4 space-y-4">
             <p className="text-sm text-slate-300 leading-relaxed">
-              This tool tests TCP port connectivity from <strong className="text-white">143 Cloudflare Worker endpoints</strong> deployed
-              across the globe. Each endpoint opens a raw TCP socket to your target host:port and measures the round-trip latency
-              from that location. Results show which data center handled the request and how long the connection took.
+              This tool performs{' '}
+              <a href="https://www.cloudflare.com/learning/network-layer/what-is-a-computer-port/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">TCP pings</a>
+              {' '}from <strong className="text-white">143 Cloudflare Worker endpoints</strong> deployed
+              across the globe. Each endpoint opens a raw{' '}
+              <a href="https://developers.cloudflare.com/workers/runtime-apis/tcp-sockets/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">TCP socket</a>
+              {' '}to your target host:port and measures the round-trip latency
+              from that location. Unlike ICMP ping, a TCP ping completes the three-way handshake (SYN → SYN-ACK → ACK)
+              to verify the port is actually accepting connections. Results show which data center handled the request and how long the connection took.
             </p>
 
             <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Two Placement Strategies</h4>
@@ -650,13 +652,13 @@ function App() {
                   <span className="font-semibold text-orange-300 text-sm">Regional Services</span>
                   <span className="text-slate-500">(10 endpoints)</span>
                 </div>
-                <p className="text-slate-400">Worker is <strong className="text-orange-300">guaranteed</strong> to run inside the target region. Ingress and egress are the same colo.</p>
+                <p className="text-slate-400">Configured on the <strong className="text-orange-300">DNS record</strong> (no worker config required). Worker is <strong className="text-orange-300">guaranteed</strong> to run inside the target region. Ingress and egress are the same colo.</p>
                 <div className="flex items-center justify-center gap-2 py-2">
                   <div className="bg-slate-700 rounded px-2 py-1 text-slate-300">You</div>
                   <span className="text-slate-500">&#8594;</span>
                   <div className="bg-orange-500/20 border border-orange-500/30 rounded px-3 py-2 text-center">
-                    <div className="text-orange-300 font-semibold">Edge in Target Region</div>
-                    <div className="text-slate-500 text-[10px]">e.g. FRA for <code className="text-orange-300">eu</code>, NRT for <code className="text-orange-300">jp</code></div>
+                    <div className="text-orange-300 font-semibold">Edge in Region</div>
+                    <div className="text-slate-400 text-[10px]">FRA (<code className="text-orange-300">de</code>)</div>
                     <div className="text-orange-400/60 text-[10px] mt-1">ingress = egress</div>
                   </div>
                   <span className="text-slate-500">&#8594;</span>
@@ -665,16 +667,19 @@ function App() {
                 <div className="text-slate-500 pt-1 border-t border-slate-700">
                   Uses region codes: <code className="bg-slate-800 px-1 rounded text-orange-300">us</code>, <code className="bg-slate-800 px-1 rounded text-orange-300">eu</code>, <code className="bg-slate-800 px-1 rounded text-orange-300">jp</code>, etc.
                 </div>
+                <a href="https://developers.cloudflare.com/workers/configuration/regions/" target="_blank" rel="noopener noreferrer" className="inline-block mt-1 text-orange-400 hover:text-orange-300 underline">
+                  Regional Services Docs &#8599;
+                </a>
               </div>
 
               {/* Targeted Placement */}
               <div className="bg-slate-900/50 rounded-lg border border-teal-500/20 p-4 space-y-3">
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-teal-500"></span>
-                  <span className="font-semibold text-teal-300 text-sm">Targeted Placement</span>
+                  <span className="font-semibold text-teal-300 text-sm">Region Placement</span>
                   <span className="text-slate-500">(133 endpoints)</span>
                 </div>
-                <p className="text-slate-400">Request hits your nearest edge, then is <strong className="text-teal-300">forwarded</strong> (like Argo Smart Routing) to a colo near the cloud provider region.</p>
+                <p className="text-slate-400">Configured on the <strong className="text-teal-300">worker</strong>. Request hits your nearest edge, then is <strong className="text-teal-300">forwarded</strong> to a colo near the cloud provider region.</p>
                 <div className="flex items-center justify-center gap-2 py-2">
                   <div className="bg-slate-700 rounded px-2 py-1 text-slate-300">You</div>
                   <span className="text-slate-500">&#8594;</span>
@@ -685,6 +690,7 @@ function App() {
                   <span className="text-teal-400">&#10230;</span>
                   <div className="bg-teal-500/20 border border-teal-500/30 rounded px-2 py-2 text-center">
                     <div className="text-teal-300 font-semibold">Cloud Region Colo</div>
+                    <div className="text-slate-400 text-[10px]">FRA (<code className="text-teal-300">eu-central-1</code>)</div>
                     <div className="text-slate-500 text-[10px]">egress</div>
                   </div>
                   <span className="text-slate-500">&#8594;</span>
@@ -693,30 +699,24 @@ function App() {
                 <div className="text-slate-500 pt-1 border-t border-slate-700">
                   Uses cloud region codes: <code className="bg-slate-800 px-1 rounded text-teal-300">aws:us-east-1</code>, <code className="bg-slate-800 px-1 rounded text-teal-300">gcp:europe-west1</code>, etc.
                 </div>
+                <a href="https://developers.cloudflare.com/workers/configuration/smart-placement/" target="_blank" rel="noopener noreferrer" className="inline-block mt-1 text-teal-400 hover:text-teal-300 underline">
+                  Placement &#8599;
+                </a>
               </div>
             </div>
 
             <p className="text-sm text-slate-300 leading-relaxed">
               <strong className="text-white">Ingress Colo</strong> is the data center that first received your request.
-              <strong className="text-white"> Egress Colo</strong> is where the Worker actually executed and ran the TCP test
-              — derived from the <code className="bg-slate-800 px-1 rounded text-slate-300">cf-placement</code> response header.
-              For Regional Services these are the same; for Targeted Placement the egress may differ.
+              <strong className="text-white"> Egress Colo</strong> is where the Worker actually executed and ran the TCP test.
+              This is derived from the <code className="bg-slate-800 px-1 rounded text-slate-300">cf-placement</code> response header.
+              These will be the same with Regional Services and may differ for Region Placement.
             </p>
 
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 text-xs text-amber-300 leading-relaxed">
-              <strong className="text-amber-200">Note:</strong> Connections to targets on Cloudflare's network (AS13335) are blocked.
-              Hostnames are resolved via DNS and the resulting IP's ASN is looked up via Team Cymru WHOIS.
+              <strong className="text-amber-200">Note:</strong> Connections to targets on Cloudflare's network (AS13335) are blocked for security reasons.
               The test button will be disabled for any target on AS13335.
             </div>
 
-            <div className="flex gap-3 text-xs pt-1">
-              <a href="https://developers.cloudflare.com/workers/configuration/smart-placement/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">
-                Targeted Placement Docs &#8599;
-              </a>
-              <a href="https://developers.cloudflare.com/workers/configuration/regions/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">
-                Regional Services Docs &#8599;
-              </a>
-            </div>
           </div>
         </details>
       </div>
@@ -853,18 +853,18 @@ function App() {
 
             {/* Results Table */}
             <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead className="bg-slate-900/50">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-900/50 text-xs">
                   <tr>
-                    <th className="px-2 py-1.5 text-left font-medium text-slate-400 uppercase tracking-wider">Region</th>
-                    <th className="px-2 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-12">Sent</th>
-                    <th className="px-2 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-14">Loss%</th>
-                    <th className="px-2 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-14">Last</th>
-                    <th className="px-2 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-14">Avg</th>
-                    <th className="px-2 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-14">Best</th>
-                    <th className="px-2 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-14">Worst</th>
-                    <th className="px-2 py-1.5 text-left font-medium text-slate-400 uppercase tracking-wider">Ingress</th>
-                    <th className="px-2 py-1.5 text-left font-medium text-slate-400 uppercase tracking-wider">Egress</th>
+                    <th className="px-3 py-1.5 text-left font-medium text-slate-400 uppercase tracking-wider">Region</th>
+                    <th className="px-3 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-14">Sent</th>
+                    <th className="px-3 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-16">Loss%</th>
+                    <th className="px-3 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-16">Last</th>
+                    <th className="px-3 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-16">Avg</th>
+                    <th className="px-3 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-16">Best</th>
+                    <th className="px-3 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-16">Worst</th>
+                    <th className="px-3 py-1.5 text-left font-medium text-slate-400 uppercase tracking-wider">Ingress</th>
+                    <th className="px-3 py-1.5 text-left font-medium text-slate-400 uppercase tracking-wider">Egress</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-700/50 font-mono">
@@ -898,7 +898,7 @@ function App() {
                     return (<>
                     {group && (
                       <tr key={`group-${index}`}>
-                        <td colSpan={9} className={`px-2 py-1 text-xs font-semibold uppercase tracking-wider border-l-2 ${group.color}`}>
+                        <td colSpan={9} className={`px-3 py-1.5 text-xs font-semibold uppercase tracking-wider border-l-2 ${group.color}`}>
                           {group.label}
                         </td>
                       </tr>
@@ -907,38 +907,38 @@ function App() {
                       key={index}
                       className={`hover:bg-slate-700/30 ${rowAccent} ${stripeBg}`}
                     >
-                      <td className="px-2 py-1 whitespace-nowrap">
+                      <td className="px-3 py-1.5 whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
                           {getStatusIcon(result.status)}
-                          <span className="font-sans text-xs text-white">
+                          <span className="font-sans text-white">
                             {result.regionName}
                           </span>
                         </div>
                       </td>
-                      <td className="px-2 py-1 text-right text-slate-300">
+                      <td className="px-3 py-1.5 text-right text-slate-300">
                         {result.sent || '-'}
                       </td>
-                      <td className={`px-2 py-1 text-right ${loss === 0 ? 'text-green-400' : loss < 50 ? 'text-yellow-400' : 'text-red-400'}`}>
+                      <td className={`px-3 py-1.5 text-right ${loss === 0 ? 'text-green-400' : loss < 50 ? 'text-yellow-400' : 'text-red-400'}`}>
                         {result.sent > 0 ? `${loss.toFixed(0)}%` : '-'}
                       </td>
-                      <td className="px-2 py-1 text-right text-slate-300">
+                      <td className="px-3 py-1.5 text-right text-slate-300">
                         {last !== null ? last : '-'}
                       </td>
-                      <td className="px-2 py-1 text-right text-slate-300">
+                      <td className="px-3 py-1.5 text-right text-slate-300">
                         {avg !== null ? avg : '-'}
                       </td>
-                      <td className="px-2 py-1 text-right text-green-400">
+                      <td className="px-3 py-1.5 text-right text-green-400">
                         {best !== null ? best : '-'}
                       </td>
-                      <td className="px-2 py-1 text-right text-red-400">
+                      <td className="px-3 py-1.5 text-right text-red-400">
                         {worst !== null ? worst : '-'}
                       </td>
-                      <td className="px-2 py-1 whitespace-nowrap text-slate-300">
+                      <td className="px-3 py-1.5 whitespace-nowrap text-slate-300">
                         {result.colo
                           ? <><span>{result.colo}</span><span className="text-slate-500"> ({result.coloCity || '?'})</span></>
                           : '-'}
                       </td>
-                      <td className="px-2 py-1 whitespace-nowrap text-slate-300">
+                      <td className="px-3 py-1.5 whitespace-nowrap text-slate-300">
                         {egress.colo
                           ? <><span>{egress.colo}</span><span className="text-slate-500"> ({egress.city || '?'})</span></>
                           : '-'}
