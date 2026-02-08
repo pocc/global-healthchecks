@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
-import { geoNaturalEarth1, geoPath, geoInterpolate, geoDistance } from 'd3-geo';
+import { geoNaturalEarth1, geoPath, geoInterpolate } from 'd3-geo';
 import { feature } from 'topojson-client';
 import type { FeatureCollection } from 'geojson';
 import { REGION_COORDINATES } from './regionCoordinates';
@@ -53,16 +53,57 @@ function getProvider(regionCode: string): string {
   return 'cloudflare';
 }
 
+/* ── Hub groups for co-located datacenters ("Flower Petal" layout) ── */
+interface HubGroup {
+  coord: [number, number]; // [lng, lat]
+  members: string[];       // region codes sharing this location
+}
+
+const HUB_GROUPS: HubGroup[] = [];
+const REGION_HUB: Record<string, number> = {};   // region code → hub index
+const REGION_ANGLE: Record<string, number> = {};  // region code → petal angle (radians)
+
+(() => {
+  const groups = new Map<string, { coord: [number, number]; codes: string[] }>();
+  for (const [code, coord] of Object.entries(REGION_COORDINATES)) {
+    const key = `${coord[0]},${coord[1]}`;
+    if (!groups.has(key)) groups.set(key, { coord, codes: [] });
+    groups.get(key)!.codes.push(code);
+  }
+  let idx = 0;
+  for (const { coord, codes } of groups.values()) {
+    if (codes.length < 2) continue;
+    HUB_GROUPS.push({ coord, members: codes });
+    const n = codes.length;
+    codes.forEach((code, i) => {
+      REGION_HUB[code] = idx;
+      REGION_ANGLE[code] = (2 * Math.PI * i) / n - Math.PI / 2;
+    });
+    idx++;
+  }
+})();
+
+const HUB_R = 6;         // normal petal offset (px)
+const HUB_R_HOVER = 14;  // expanded on hover (px)
+
+const PROVIDER_LABELS: Record<string, string> = {
+  cloudflare: 'Cloudflare',
+  aws: 'AWS',
+  gcp: 'GCP',
+  azure: 'Azure',
+};
+
 /* ═══════════════════════════════════════════════════════
    Multi-hop packet-path animation system
    Home → Worker (Cloudflare edge) → Target
    ═══════════════════════════════════════════════════════ */
 
-const DILATION = 1;         // 1:1 real-time latency animation
-const MIN_LEG_MS = 150;     // minimum animation time per leg
-const MAX_PACKETS = 50;     // concurrent packet cap
+const REPLAY_DELAY = 5000;  // 5s after pings sent, replay all results
+const MIN_LEG_MS = 16;      // ~1 frame minimum per leg
+const MAX_PACKETS = 300;    // 2 concurrent rounds of 143 regions
 const TRAIL_FADE = 1500;    // completed trail fade duration (ms)
 const RIPPLE_DUR = 400;     // impact ripple duration (ms)
+const SPEED_MULT = 100;     // duration = sqrt(latency) * SPEED_MULT
 
 interface Leg {
   from: [number, number];   // [lng, lat]
@@ -103,39 +144,37 @@ function spawnPacket(
   home: [number, number] | null,
   target: [number, number] | null,
   failed: boolean,
-  now: number,
+  startAt: number,
 ) {
   const worker = REGION_COORDINATES[regionCode];
   if (!worker) return;
 
   const legs: Leg[] = [];
+  const totalDur = Math.sqrt(latency) * SPEED_MULT;
+  const halfLat = Math.max(MIN_LEG_MS, totalDur / 2);
 
   if (home && target) {
-    // Full 2-hop path: Home → Worker → Target
-    const d1 = geoDistance(home, worker) || 0.001;
-    const d2 = geoDistance(worker, target) || 0.001;
-    const total = d1 + d2;
-    const anim = Math.max(latency * DILATION, MIN_LEG_MS * 2);
+    // Full 2-hop: Home → Worker → Target, each leg = latency/2
     legs.push({
       from: home, to: worker,
-      dur: Math.max(MIN_LEG_MS, anim * d1 / total),
+      dur: halfLat,
       interp: geoInterpolate(home, worker),
     });
     legs.push({
       from: worker, to: target,
-      dur: Math.max(MIN_LEG_MS, anim * d2 / total),
+      dur: halfLat,
       interp: geoInterpolate(worker, target),
     });
   } else if (home) {
     legs.push({
       from: home, to: worker,
-      dur: Math.max(MIN_LEG_MS, latency * DILATION),
+      dur: Math.max(MIN_LEG_MS, Math.sqrt(latency) * SPEED_MULT),
       interp: geoInterpolate(home, worker),
     });
   } else if (target) {
     legs.push({
       from: worker, to: target,
-      dur: Math.max(MIN_LEG_MS, latency * DILATION),
+      dur: Math.max(MIN_LEG_MS, Math.sqrt(latency) * SPEED_MULT),
       interp: geoInterpolate(worker, target),
     });
   }
@@ -145,7 +184,8 @@ function spawnPacket(
   // Evict oldest packets if at capacity
   while (packets.length >= MAX_PACKETS) packets.shift();
 
-  packets.push({ provider: getProvider(regionCode), failed, legs, legIdx: 0, legStart: now });
+  // legStart = startAt so packet sits dormant until the replay moment
+  packets.push({ provider: getProvider(regionCode), failed, legs, legIdx: 0, legStart: startAt });
 }
 
 /* Draw a great-circle arc on projected Canvas */
@@ -181,6 +221,8 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const animFrameRef = useRef<number>(0);
   const prevSentRef = useRef<Map<string, number>>(new Map());
+  const roundStartRef = useRef<number>(0);
+  const mouseRef = useRef<[number, number] | null>(null);
 
   // Fetch world topology once
   useEffect(() => {
@@ -194,7 +236,7 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
       .catch(() => {});
   }, []);
 
-  // Track result updates → spawn packet animations
+  // Track result updates → spawn packet animations with 5s batch delay
   useEffect(() => {
     const now = Date.now();
     const home: [number, number] | null = homeLocation
@@ -203,11 +245,26 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
     const target: [number, number] | null = targetLocation
       ? [targetLocation.lng, targetLocation.lat]
       : null;
+
+    // Check if any new results arrived
+    let hasNew = false;
+    results.forEach(r => {
+      if (r.sent > (prevSentRef.current.get(r.region) || 0)) hasNew = true;
+    });
+    if (!hasNew) return;
+
+    // Detect new round: >4s since last round → new batch
+    if (now - roundStartRef.current > 4000) {
+      roundStartRef.current = now;
+    }
+    // All packets in this round replay at roundStart + 5s
+    const startAt = roundStartRef.current + REPLAY_DELAY;
+
     results.forEach(r => {
       const prev = prevSentRef.current.get(r.region) || 0;
       if (r.sent > prev) {
         const lat = r.latencies.length > 0 ? r.latencies[r.latencies.length - 1] : 100;
-        spawnPacket(r.region, lat, home, target, r.status === 'failed', now);
+        spawnPacket(r.region, lat, home, target, r.status === 'failed', startAt);
         prevSentRef.current.set(r.region, r.sent);
       }
     });
@@ -305,7 +362,9 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
     const done: number[] = [];
     packets.forEach((pkt, idx) => {
       const leg = pkt.legs[pkt.legIdx];
-      const progress = Math.min(1, (now - pkt.legStart) / leg.dur);
+      const elapsed = now - pkt.legStart;
+      if (elapsed < 0) return; // batch hasn't started yet — waiting for 5s replay
+      const progress = Math.min(1, elapsed / leg.dur);
       const colors = PROVIDER_COLORS[pkt.provider];
       const rgb = colors?.rgb || '255,255,255';
 
@@ -379,9 +438,37 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
       ctx.stroke();
     });
 
-    /* ── Region dots ── */
+    /* ── Region dots (Flower Petal layout for co-located) ── */
     const resultMap = new Map<string, TestResult>();
     results.forEach(r => resultMap.set(r.region, r));
+
+    // Determine which hub (if any) the mouse is hovering over
+    const mouse = mouseRef.current;
+    let hoveredHub = -1;
+    if (mouse) {
+      for (let hi = 0; hi < HUB_GROUPS.length; hi++) {
+        const center = proj(HUB_GROUPS[hi].coord);
+        if (!center) continue;
+        const dx = mouse[0] - center[0];
+        const dy = mouse[1] - center[1];
+        if (dx * dx + dy * dy < 20 * 20) { hoveredHub = hi; break; }
+      }
+    }
+
+    // Draw connecting circles for multi-provider hubs
+    HUB_GROUPS.forEach((hub, hi) => {
+      const center = proj(hub.coord);
+      if (!center) return;
+      const r = hi === hoveredHub ? HUB_R_HOVER : HUB_R;
+      ctx.beginPath();
+      ctx.arc(center[0], center[1], r, 0, 2 * Math.PI);
+      ctx.strokeStyle = hi === hoveredHub ? 'rgba(148,163,184,0.4)' : 'rgba(100,116,139,0.2)';
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+    });
+
+    // Draw dots, track hovered dot for tooltip
+    const tooltipBox = { value: null as { x: number; y: number; name: string; provider: string } | null };
 
     allRegions.forEach(regionCode => {
       const coords = REGION_COORDINATES[regionCode];
@@ -390,6 +477,16 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
       const p = proj(coords);
       if (!p) return;
 
+      // Apply hub petal offset
+      let px = p[0], py = p[1];
+      const hubIdx = REGION_HUB[regionCode];
+      if (hubIdx !== undefined) {
+        const r = hubIdx === hoveredHub ? HUB_R_HOVER : HUB_R;
+        const angle = REGION_ANGLE[regionCode];
+        px += Math.cos(angle) * r;
+        py += Math.sin(angle) * r;
+      }
+
       const provider = getProvider(regionCode);
       const colors = PROVIDER_COLORS[provider];
       const result = resultMap.get(regionCode);
@@ -397,15 +494,15 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
       // Dot glow (provider-colored) for connected regions
       if (result && result.status === 'connected') {
         ctx.beginPath();
-        ctx.arc(p[0], p[1], 6, 0, 2 * Math.PI);
+        ctx.arc(px, py, 6, 0, 2 * Math.PI);
         ctx.fillStyle = colors.glow;
         ctx.fill();
       }
 
-      // Main dot
+      // Main dot (circle for all providers)
       const dotRadius = result && result.sent > 0 ? 2.5 : 1.5;
       ctx.beginPath();
-      ctx.arc(p[0], p[1], dotRadius, 0, 2 * Math.PI);
+      ctx.arc(px, py, dotRadius, 0, 2 * Math.PI);
 
       if (!result || result.sent === 0) {
         ctx.fillStyle = '#475569';
@@ -417,6 +514,16 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
         ctx.fillStyle = '#94a3b8';
       }
       ctx.fill();
+
+      // Check if mouse is over this dot
+      if (mouse) {
+        const dx = mouse[0] - px;
+        const dy = mouse[1] - py;
+        if (dx * dx + dy * dy < 8 * 8) {
+          const name = result?.regionName || regionCode;
+          tooltipBox.value = { x: px, y: py, name, provider: PROVIDER_LABELS[provider] || provider };
+        }
+      }
     });
 
     /* ── Home marker (white diamond) ── */
@@ -477,6 +584,32 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
         ctx.fillStyle = '#ef4444';
         ctx.fill();
       }
+    }
+
+    /* ── Hover tooltip ── */
+    const tooltip = tooltipBox.value;
+    if (tooltip) {
+      ctx.font = '10px system-ui, sans-serif';
+      const line1 = tooltip.name;
+      const line2 = tooltip.provider;
+      const tw = Math.max(ctx.measureText(line1).width, ctx.measureText(line2).width) + 12;
+      const th = 30;
+      const tx = Math.min(tooltip.x + 10, width - tw - 4);
+      const ty = Math.max(tooltip.y - th - 6, 4);
+
+      ctx.fillStyle = 'rgba(15,23,42,0.92)';
+      ctx.beginPath();
+      ctx.roundRect(tx, ty, tw, th, 4);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(148,163,184,0.3)';
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+
+      ctx.fillStyle = '#e2e8f0';
+      ctx.textAlign = 'left';
+      ctx.fillText(line1, tx + 6, ty + 12);
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText(line2, tx + 6, ty + 24);
     }
 
     /* ── Legend (bottom-left) ── */
@@ -552,7 +685,21 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
     <div ref={containerRef} className="w-full bg-slate-800/50 backdrop-blur-sm rounded-xl border border-slate-700 overflow-hidden">
       <canvas
         ref={canvasRef}
-        style={{ width: dimensions.width || '100%', height: dimensions.height || 'auto', display: 'block' }}
+        onMouseMove={(e) => {
+          mouseRef.current = [e.nativeEvent.offsetX, e.nativeEvent.offsetY];
+          if (!packets.length && !trails.length && !ripples.length) {
+            cancelAnimationFrame(animFrameRef.current);
+            animFrameRef.current = requestAnimationFrame(draw);
+          }
+        }}
+        onMouseLeave={() => {
+          mouseRef.current = null;
+          if (!packets.length && !trails.length && !ripples.length) {
+            cancelAnimationFrame(animFrameRef.current);
+            animFrameRef.current = requestAnimationFrame(draw);
+          }
+        }}
+        style={{ width: dimensions.width || '100%', height: dimensions.height || 'auto', display: 'block', cursor: 'crosshair' }}
       />
     </div>
   );

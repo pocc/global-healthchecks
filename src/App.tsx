@@ -959,7 +959,9 @@ function App() {
                       gcp: 'border-l-2 border-l-[#34A853]/30',
                       azure: 'border-l-2 border-l-[#0078D4]/30',
                     }[regionType];
-                    const stripeBg = isEvenRow ? '' : 'bg-slate-800/30';
+                    const stripeBg = isEvenRow
+                      ? { regional: 'bg-[#F38020]/[0.04]', aws: 'bg-[#FACC15]/[0.04]', gcp: 'bg-[#34A853]/[0.04]', azure: 'bg-[#0078D4]/[0.04]' }[regionType]
+                      : { regional: 'bg-[#F38020]/[0.07]', aws: 'bg-[#FACC15]/[0.07]', gcp: 'bg-[#34A853]/[0.07]', azure: 'bg-[#0078D4]/[0.07]' }[regionType];
 
                     const loss = result.sent > 0 ? (result.sent - result.received) / result.sent * 100 : 0;
                     const last = result.latencies.length > 0 ? result.latencies[result.latencies.length - 1] : null;

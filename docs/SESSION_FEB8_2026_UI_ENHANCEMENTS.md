@@ -73,6 +73,27 @@ Changed from `WifiOff` to `Network` (lucide-react) — more appropriate for WAN/
 
 City names containing commas (e.g., "Houston, TX") now properly escaped with double-quote wrapping in CSV output.
 
+### 10. Flower Petal Layout for Co-Located Datacenters
+
+Many cities host multiple cloud providers (e.g., Tokyo has AWS, GCP, and Azure). Previously, dots stacked on top of each other, creating misleading color blending (green + blue = cyan).
+
+- **Radial offset**: Co-located dots are arranged in a "flower petal" pattern around the shared coordinate. 2 providers offset at 0°/180°, 3 at 120° apart, 4 at 90° increments.
+- **Connecting circle**: Each multi-provider hub has a faint gray ring connecting the petals, showing they belong to the same location.
+- **Hover expansion**: Hovering near a hub expands the petal radius from 6px to 14px for clear individual dot visibility.
+- **Hover tooltip**: Hovering over any dot shows a tooltip with the region name and cloud provider.
+- **Crosshair cursor**: Canvas uses crosshair cursor to hint at interactivity.
+
+Pre-computed at module init via `HUB_GROUPS`, `REGION_HUB`, and `REGION_ANGLE` lookups. Mouse tracking via `mouseRef` with `onMouseMove`/`onMouseLeave` handlers that trigger redraws when no animations are active.
+
+### 11. Provider-Tinted Table Row Backgrounds
+
+Table row backgrounds are now tinted per provider (alternating 4%/7% opacity) instead of uniform `bg-slate-800/30`. Each provider section has its own subtle color identity.
+
+### 12. Animation Timing Improvements
+
+- **Speed formula**: `sqrt(latency) * SPEED_MULT` where `SPEED_MULT = 100`. Compresses the visual range so high-latency routes don't take too long, while low-latency ones are still visible.
+- **Packet buffer**: Increased `MAX_PACKETS` from 200 to 300 to accommodate 2 concurrent rounds of 143 regions, preventing long-distance animations from being evicted before completion.
+
 ## Files Modified
 
 | File | Changes |
@@ -93,6 +114,12 @@ No single free GeoIP provider is reliable enough. `reallyfreegeoip.org` has ques
 
 ### Why not @heroicons?
 Avoided adding another dependency. All icons use lucide-react (already installed) or inline Canvas drawing.
+
+### Why Flower Petal layout instead of per-provider shapes?
+Shapes (circle/square/triangle/diamond) were tried first but reverted. At 2.5px radius on a dark map, shape differentiation was too subtle. The radial offset approach preserves spatial accuracy while making each provider's dot independently identifiable by color, without requiring the user to distinguish tiny geometric shapes.
+
+### Why MAX_PACKETS = 300?
+Each ping round spawns 143 packets. With `sqrt(latency) * 100` timing, high-latency routes (e.g., São Paulo at 200ms = 1414ms/leg) take ~3s to complete. If a new round starts while the previous is still animating, the old cap of 200 caused `shift()` eviction of the slowest (longest-distance) routes. 300 accommodates 2 full concurrent rounds (286 packets).
 
 ## Known Issues
 
