@@ -1,14 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Globe,
   Wifi,
   WifiOff,
   CheckCircle2,
   XCircle,
-  Clock,
   Loader2,
   Trash2,
   Play,
+  Square,
   Server,
   Download,
 } from 'lucide-react';
@@ -24,13 +24,14 @@ interface HealthCheckRequest {
 interface TestResult {
   region: string;
   regionName: string;
-  status: 'pending' | 'connected' | 'failed' | 'timeout';
-  latencyMs?: number;
-  timestamp?: number;
-  error?: string;
+  status: 'pending' | 'connected' | 'failed';
+  sent: number;
+  received: number;
+  latencies: number[];
+  lastError?: string;
   colo?: string;
   coloCity?: string;
-  cfPlacement?: string; // Smart Placement status (local-XXX or remote-XXX)
+  cfPlacement?: string;
 }
 
 // Regional Services - User-friendly subdomains (Primary)
@@ -192,6 +193,25 @@ const AZURE_PLACEMENT = [
   { code: 'azure-westus3', name: 'Azure: Phoenix', flag: '🇺🇸', provider: 'azure' },
 ];
 
+/** Reverse IPv4 octets for Cymru DNS lookup: "1.2.3.4" → "4.3.2.1" */
+const reverseIPv4 = (ip: string): string => ip.split('.').reverse().join('.');
+
+/** Expand and reverse IPv6 nibbles for Cymru DNS lookup */
+const reverseIPv6Nibbles = (ip: string): string => {
+  const parts = ip.split('::');
+  let groups: string[];
+  if (parts.length === 2) {
+    const left = parts[0] ? parts[0].split(':') : [];
+    const right = parts[1] ? parts[1].split(':') : [];
+    groups = [...left, ...Array(8 - left.length - right.length).fill('0000'), ...right];
+  } else {
+    groups = ip.split(':');
+  }
+  return groups.map(g => g.padStart(4, '0')).join('').split('').reverse().join('.');
+};
+
+const CLOUDFLARE_ASN = '13335';
+
 function App() {
   const [host, setHost] = useState('amazon.com');
   const [port, setPort] = useState('443');
@@ -206,37 +226,112 @@ function App() {
   const [results, setResults] = useState<TestResult[]>([]);
   const [isRunning, setIsRunning] = useState(false);
 
-  // Cloudflare IPv4 CIDR ranges (from https://www.cloudflare.com/ips/)
-  const CLOUDFLARE_IPV4_CIDRS = [
-    '173.245.48.0/20', '103.21.244.0/22', '103.22.200.0/22', '103.31.4.0/22',
-    '141.101.64.0/18', '108.162.192.0/18', '190.93.240.0/20', '188.114.96.0/20',
-    '197.234.240.0/22', '198.41.128.0/17', '162.158.0.0/15', '104.16.0.0/13',
-    '104.24.0.0/14', '172.64.0.0/13', '131.0.72.0/22',
-  ];
+  const [isValidatingHost, setIsValidatingHost] = useState(false);
+  const dnsAbortRef = useRef<AbortController | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [startTime, setStartTime] = useState<number | null>(null);
 
-  // Cloudflare IPv6 prefixes
-  const CLOUDFLARE_IPV6_PREFIXES = [
-    '2400:cb00:', '2606:4700:', '2803:f800:', '2405:b500:',
-    '2405:8100:', '2a06:98c', '2c0f:f248:',
-  ];
+  // Cleanup interval on unmount
+  useEffect(() => {
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, []);
 
-  const ipv4ToInt = (ip: string): number => {
-    return ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
-  };
+  // ASN validation: check if target IP/hostname is on Cloudflare's network (AS13335)
+  // Uses Team Cymru DNS for ASN lookup, dns.google for hostname resolution
+  useEffect(() => {
+    dnsAbortRef.current?.abort();
 
-  const isCloudflareIPv4 = (ip: string): boolean => {
-    const ipInt = ipv4ToInt(ip);
-    return CLOUDFLARE_IPV4_CIDRS.some((cidr) => {
-      const [network, bits] = cidr.split('/');
-      const mask = (~0 << (32 - parseInt(bits, 10))) >>> 0;
-      return (ipInt & mask) === (ipv4ToInt(network) & mask);
-    });
-  };
+    const trimmedHost = host.trim();
+    if (!trimmedHost) {
+      setIsValidatingHost(false);
+      return;
+    }
 
-  const isCloudflareIPv6 = (ip: string): boolean => {
-    const lower = ip.toLowerCase();
-    return CLOUDFLARE_IPV6_PREFIXES.some((prefix) => lower.startsWith(prefix));
-  };
+    const ipv4Pattern = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+    const ipv6Pattern = /^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|::([fF]{4}(:0{1,4})?:)?((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.){3}(25[0-5]|(2[0-4]|1?[0-9])?[0-9]))$/;
+    const hostnamePattern = /^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/;
+
+    const isIPv4 = ipv4Pattern.test(trimmedHost);
+    const isIPv6 = ipv6Pattern.test(trimmedHost);
+    const isHostname = !isIPv4 && !isIPv6 && hostnamePattern.test(trimmedHost);
+
+    if (!isIPv4 && !isIPv6 && !isHostname) {
+      setIsValidatingHost(false);
+      return;
+    }
+
+    // Extra IPv4 validation: octets must be 0-255
+    if (isIPv4) {
+      const octets = trimmedHost.split('.').map(Number);
+      if (!octets.every(o => o >= 0 && o <= 255)) {
+        setIsValidatingHost(false);
+        return;
+      }
+    }
+
+    setIsValidatingHost(true);
+
+    const abortController = new AbortController();
+    dnsAbortRef.current = abortController;
+
+    const timer = setTimeout(async () => {
+      try {
+        let ip = trimmedHost;
+        let ipVersion: 4 | 6 = isIPv6 ? 6 : 4;
+
+        // If hostname, resolve to IP first
+        if (isHostname) {
+          const dnsRes = await fetch(
+            `https://dns.google/resolve?name=${encodeURIComponent(trimmedHost)}&type=A`,
+            { signal: abortController.signal }
+          );
+          const dnsData: { Answer?: { type: number; data: string }[] } = await dnsRes.json();
+          const aRecord = dnsData.Answer?.find(a => a.type === 1);
+          if (!aRecord) {
+            setIsValidatingHost(false);
+            return;
+          }
+          ip = aRecord.data;
+          ipVersion = 4;
+        }
+
+        // Look up ASN via Team Cymru DNS
+        const cymruName = ipVersion === 6
+          ? `${reverseIPv6Nibbles(ip)}.origin6.asn.cymru.com`
+          : `${reverseIPv4(ip)}.origin.asn.cymru.com`;
+
+        const asnRes = await fetch(
+          `https://dns.google/resolve?name=${cymruName}&type=TXT`,
+          { signal: abortController.signal }
+        );
+        const asnData: { Answer?: { type: number; data: string }[] } = await asnRes.json();
+        const txtRecord = asnData.Answer?.find(a => a.type === 16);
+        if (txtRecord) {
+          // Format: "13335 | 1.1.1.0/24 | US | apnic | 2011-08-11"
+          const asn = txtRecord.data.split('|')[0].trim().replace(/"/g, '');
+          if (asn === CLOUDFLARE_ASN) {
+            const resolvedInfo = isHostname ? ` Resolved: ${ip}.` : '';
+            setHostError(
+              `Target is on Cloudflare's network (AS${asn}).${resolvedInfo} Connections will be blocked.`
+            );
+            setIsValidatingHost(false);
+            return;
+          }
+        }
+      } catch (e) {
+        if (e instanceof DOMException && e.name === 'AbortError') return;
+        // ASN lookup failed — allow the test to proceed
+      }
+      setIsValidatingHost(false);
+    }, 500);
+
+    return () => {
+      clearTimeout(timer);
+      abortController.abort();
+    };
+  }, [host]);
 
   const validateHost = (value: string): boolean => {
     if (!value.trim()) {
@@ -253,10 +348,6 @@ function App() {
         setHostError('Invalid IPv4 address (octets must be 0-255)');
         return false;
       }
-      if (isCloudflareIPv4(value)) {
-        setHostError('This IP belongs to Cloudflare\'s network (AS13335). Connections to Cloudflare IPs will be blocked for security reasons.');
-        return false;
-      }
       setHostError('');
       return true;
     }
@@ -264,10 +355,6 @@ function App() {
     // IPv6 pattern (simplified - covers most common cases)
     const ipv6Pattern = /^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|::([fF]{4}(:0{1,4})?:)?((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.){3}(25[0-5]|(2[0-4]|1?[0-9])?[0-9]))$/;
     if (ipv6Pattern.test(value)) {
-      if (isCloudflareIPv6(value)) {
-        setHostError('This IP belongs to Cloudflare\'s network (AS13335). Connections to Cloudflare IPs will be blocked for security reasons.');
-        return false;
-      }
       setHostError('');
       return true;
     }
@@ -288,9 +375,12 @@ function App() {
   const handleHostChange = (value: string) => {
     setHost(value);
     if (value.trim()) {
-      validateHost(value);
+      const isValid = validateHost(value);
+      // All valid inputs need async ASN check
+      setIsValidatingHost(isValid);
     } else {
       setHostError('');
+      setIsValidatingHost(false);
     }
   };
 
@@ -310,36 +400,45 @@ function App() {
     }
   };
 
-  const canRun = !isRunning && !!host.trim() && !!port && !hostError && !portError;
+  const canRun = !isRunning && !isValidatingHost && !!host.trim() && !!port && !hostError && !portError;
 
   const clearResults = () => {
     setResults([]);
   };
 
+  const getEgressColo = (result: TestResult): { colo: string; city: string } => {
+    const regionType = getRegionType(result.region);
+    if (regionType === 'regional') {
+      return { colo: result.colo || '', city: result.coloCity || '' };
+    }
+    if (result.cfPlacement) {
+      const colo = result.cfPlacement.split('-').slice(1).join('-').toUpperCase();
+      return { colo, city: COLO_TO_CITY[colo] || '' };
+    }
+    // Fallback: if no cfPlacement but we have ingress, assume same
+    if (result.colo) {
+      return { colo: result.colo, city: result.coloCity || '' };
+    }
+    return { colo: '', city: '' };
+  };
+
   const downloadCsv = () => {
     const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
-    const headers = ['Region', 'Status', 'Latency (ms)', 'Ingress Colo', 'Ingress City', 'Egress Colo', 'Egress City', 'Timestamp', 'Details'];
+    const headers = ['Region', 'Sent', 'Loss%', 'Last (ms)', 'Avg (ms)', 'Best (ms)', 'Worst (ms)', 'Ingress Colo', 'Ingress City', 'Egress Colo', 'Egress City'];
     const rows = results.map((r) => {
-      const regionType = getRegionType(r.region);
-      let egressColo = '';
-      let egressCity = '';
-      if (regionType === 'regional') {
-        egressColo = r.colo || '';
-        egressCity = r.coloCity || '';
-      } else if (r.cfPlacement) {
-        egressColo = r.cfPlacement.split('-').slice(1).join('-').toUpperCase();
-        egressCity = COLO_TO_CITY[egressColo] || '';
-      }
+      const egress = getEgressColo(r);
+      const loss = r.sent > 0 ? ((r.sent - r.received) / r.sent * 100).toFixed(1) : '';
+      const last = r.latencies.length > 0 ? String(r.latencies[r.latencies.length - 1]) : '';
+      const avg = r.latencies.length > 0 ? String(Math.round(r.latencies.reduce((a, b) => a + b, 0) / r.latencies.length)) : '';
+      const best = r.latencies.length > 0 ? String(Math.min(...r.latencies)) : '';
+      const worst = r.latencies.length > 0 ? String(Math.max(...r.latencies)) : '';
       return [
         escape(r.regionName),
-        r.status,
-        r.latencyMs !== undefined ? String(r.latencyMs) : '',
-        r.colo || '',
-        r.coloCity || '',
-        egressColo,
-        egressCity,
-        r.timestamp ? new Date(r.timestamp).toISOString() : '',
-        escape(r.error || (r.status === 'connected' ? 'Connected successfully' : '')),
+        String(r.sent),
+        loss,
+        last, avg, best, worst,
+        r.colo || '', r.coloCity || '',
+        egress.colo, egress.city,
       ].join(',');
     });
     const csv = [headers.join(','), ...rows].join('\n');
@@ -388,123 +487,112 @@ function App() {
     }
   });
 
-  const runTest = async () => {
-    if (!host || !port) {
-      return;
-    }
+  const runSingleRound = () => {
+    selectedRegions.forEach((regionCode, index) => {
+      // Increment sent
+      setResults((prev) =>
+        prev.map((r, i) => i === index ? { ...r, sent: r.sent + 1 } : r)
+      );
+
+      const checkRequest: HealthCheckRequest = {
+        host: host.trim(),
+        port: parseInt(port),
+        timeout: 10000,
+        region: regionCode,
+      };
+
+      const regionalEndpoint = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? '/api/check'
+        : `https://${regionCode}.healthchecks.ross.gg/api/check`;
+
+      fetch(regionalEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(checkRequest),
+      })
+        .then(async (response) => {
+          const cfPlacement = response.headers.get('cf-placement');
+          const data = (await response.json()) as {
+            success: boolean;
+            latencyMs?: number;
+            error?: string;
+            colo?: string;
+            coloCity?: string;
+          };
+
+          setResults((prev) =>
+            prev.map((r, i) =>
+              i === index
+                ? {
+                    ...r,
+                    status: data.success ? 'connected' as const : 'failed' as const,
+                    received: data.success ? r.received + 1 : r.received,
+                    latencies: data.latencyMs !== undefined ? [...r.latencies, data.latencyMs] : r.latencies,
+                    lastError: data.error,
+                    colo: data.colo || r.colo,
+                    coloCity: data.coloCity || r.coloCity,
+                    cfPlacement: cfPlacement || r.cfPlacement,
+                  }
+                : r
+            )
+          );
+        })
+        .catch((error) => {
+          setResults((prev) =>
+            prev.map((r, i) =>
+              i === index
+                ? {
+                    ...r,
+                    status: 'failed' as const,
+                    lastError: error instanceof Error ? error.message : 'Request failed',
+                  }
+                : r
+            )
+          );
+        });
+    });
+  };
+
+  const runTest = () => {
+    if (!host || !port) return;
 
     setIsRunning(true);
+    setStartTime(Date.now());
 
-    // Initialize results with pending status
+    // Initialize results
     const initialResults: TestResult[] = selectedRegions.map((regionCode) => ({
       region: regionCode,
       regionName: getRegionName(regionCode),
       status: 'pending' as const,
+      sent: 0,
+      received: 0,
+      latencies: [],
     }));
-
     setResults(initialResults);
 
-    // Run tests in parallel for all selected regions
-    const testPromises = selectedRegions.map(async (regionCode, index) => {
-      const regionName = getRegionName(regionCode);
+    // Run first round immediately
+    setTimeout(() => runSingleRound(), 0);
 
-      try {
-        const checkRequest: HealthCheckRequest = {
-          host: host.trim(),
-          port: parseInt(port),
-          timeout: 10000,
-          region: regionCode,
-        };
+    // Repeat every 5 seconds
+    intervalRef.current = setInterval(runSingleRound, 5000);
+  };
 
-        // Use regional endpoint for true multi-region testing
-        const regionalEndpoint = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-          ? '/api/check' // Local development uses single endpoint
-          : `https://${regionCode}.healthchecks.ross.gg/api/check`; // Production uses regional subdomains
-
-        const response = await fetch(regionalEndpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(checkRequest),
-        });
-
-        // Capture cf-placement header to see if Smart Placement moved the request
-        const cfPlacement = response.headers.get('cf-placement');
-
-        const data = (await response.json()) as {
-          success: boolean;
-          latencyMs?: number;
-          timestamp?: number;
-          error?: string;
-          colo?: string;
-          coloCity?: string;
-        };
-
-        // Update this specific region's result
-        setResults((prev) =>
-          prev.map((result, i) =>
-            i === index
-              ? {
-                  region: regionCode,
-                  regionName,
-                  status: data.success ? 'connected' : 'failed',
-                  latencyMs: data.latencyMs,
-                  timestamp: data.timestamp || Date.now(),
-                  cfPlacement: cfPlacement || undefined,
-                  error: data.error,
-                  colo: data.colo,
-                  coloCity: data.coloCity,
-                }
-              : result
-          )
-        );
-      } catch (error) {
-        // Update with error
-        setResults((prev) =>
-          prev.map((result, i) =>
-            i === index
-              ? {
-                  region: regionCode,
-                  regionName,
-                  status: 'failed',
-                  error: error instanceof Error ? error.message : 'Request failed',
-                  timestamp: Date.now(),
-                }
-              : result
-          )
-        );
-      }
-    });
-
-    await Promise.all(testPromises);
+  const stopTest = () => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
     setIsRunning(false);
   };
 
   const getStatusIcon = (status: TestResult['status']) => {
     switch (status) {
       case 'pending':
-        return <Loader2 className="w-5 h-5 text-gray-400 animate-spin" />;
+        return <Loader2 className="w-3.5 h-3.5 text-gray-400 animate-spin" />;
       case 'connected':
-        return <CheckCircle2 className="w-5 h-5 text-green-500" />;
+        return <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />;
       case 'failed':
-        return <XCircle className="w-5 h-5 text-red-500" />;
-      case 'timeout':
-        return <Clock className="w-5 h-5 text-yellow-500" />;
-    }
-  };
-
-  const getStatusBadge = (status: TestResult['status']) => {
-    const baseClasses = 'px-2 py-1 rounded-full text-xs font-semibold';
-    switch (status) {
-      case 'pending':
-        return <span className={`${baseClasses} bg-gray-100 text-gray-700`}>Pending</span>;
-      case 'connected':
-        return <span className={`${baseClasses} bg-green-100 text-green-700`}>Connected</span>;
-      case 'failed':
-        return <span className={`${baseClasses} bg-red-100 text-red-700`}>Failed</span>;
-      case 'timeout':
-        return <span className={`${baseClasses} bg-yellow-100 text-yellow-700`}>Timeout</span>;
+        return <XCircle className="w-3.5 h-3.5 text-red-500" />;
     }
   };
 
@@ -562,26 +650,20 @@ function App() {
                   <span className="font-semibold text-orange-300 text-sm">Regional Services</span>
                   <span className="text-slate-500">(10 endpoints)</span>
                 </div>
-                <div className="space-y-2 text-slate-400">
-                  {/* Flow */}
-                  <div className="flex items-center gap-2">
-                    <div className="bg-slate-700 rounded px-2 py-1 text-slate-300 whitespace-nowrap">Your Request</div>
-                    <span className="text-slate-600">&#8594;</span>
-                    <div className="bg-slate-700 rounded px-2 py-1 text-slate-300 whitespace-nowrap">Nearest Edge</div>
+                <p className="text-slate-400">Worker is <strong className="text-orange-300">guaranteed</strong> to run inside the target region. Ingress and egress are the same colo.</p>
+                <div className="flex items-center justify-center gap-2 py-2">
+                  <div className="bg-slate-700 rounded px-2 py-1 text-slate-300">You</div>
+                  <span className="text-slate-500">&#8594;</span>
+                  <div className="bg-orange-500/20 border border-orange-500/30 rounded px-3 py-2 text-center">
+                    <div className="text-orange-300 font-semibold">Edge in Target Region</div>
+                    <div className="text-slate-500 text-[10px]">e.g. FRA for <code className="text-orange-300">eu</code>, NRT for <code className="text-orange-300">jp</code></div>
+                    <div className="text-orange-400/60 text-[10px] mt-1">ingress = egress</div>
                   </div>
-                  <div className="flex items-center gap-2 pl-4">
-                    <span className="text-orange-500">&#8595;</span>
-                    <span className="text-orange-400 italic">guaranteed forwarding</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="bg-orange-500/20 border border-orange-500/30 rounded px-2 py-1 text-orange-300 whitespace-nowrap">Target Region (e.g. EU, JP)</div>
-                    <span className="text-slate-600">&#8594;</span>
-                    <div className="bg-slate-700 rounded px-2 py-1 text-slate-300 whitespace-nowrap">TCP Test</div>
-                  </div>
+                  <span className="text-slate-500">&#8594;</span>
+                  <div className="bg-slate-700 rounded px-2 py-1 text-slate-300">TCP Test</div>
                 </div>
                 <div className="text-slate-500 pt-1 border-t border-slate-700">
-                  <strong className="text-orange-400">Guarantee:</strong> Worker <em>must</em> execute within the specified country/region.
-                  Uses codes like <code className="bg-slate-800 px-1 rounded text-orange-300">us</code>, <code className="bg-slate-800 px-1 rounded text-orange-300">eu</code>, <code className="bg-slate-800 px-1 rounded text-orange-300">jp</code>.
+                  Uses region codes: <code className="bg-slate-800 px-1 rounded text-orange-300">us</code>, <code className="bg-slate-800 px-1 rounded text-orange-300">eu</code>, <code className="bg-slate-800 px-1 rounded text-orange-300">jp</code>, etc.
                 </div>
               </div>
 
@@ -592,41 +674,39 @@ function App() {
                   <span className="font-semibold text-teal-300 text-sm">Targeted Placement</span>
                   <span className="text-slate-500">(133 endpoints)</span>
                 </div>
-                <div className="space-y-2 text-slate-400">
-                  {/* Flow */}
-                  <div className="flex items-center gap-2">
-                    <div className="bg-slate-700 rounded px-2 py-1 text-slate-300 whitespace-nowrap">Your Request</div>
-                    <span className="text-slate-600">&#8594;</span>
-                    <div className="bg-slate-700 rounded px-2 py-1 text-slate-300 whitespace-nowrap">Nearest Edge</div>
+                <p className="text-slate-400">Request hits your nearest edge, then is <strong className="text-teal-300">forwarded</strong> (like Argo Smart Routing) to a colo near the cloud provider region.</p>
+                <div className="flex items-center justify-center gap-2 py-2">
+                  <div className="bg-slate-700 rounded px-2 py-1 text-slate-300">You</div>
+                  <span className="text-slate-500">&#8594;</span>
+                  <div className="bg-slate-700 rounded px-2 py-1 text-center">
+                    <div className="text-slate-300">Nearest Edge</div>
+                    <div className="text-slate-500 text-[10px]">ingress</div>
                   </div>
-                  <div className="flex items-center gap-2 pl-4">
-                    <span className="text-teal-500">&#8595;</span>
-                    <span className="text-teal-400 italic">routed near cloud provider region</span>
+                  <span className="text-teal-400">&#10230;</span>
+                  <div className="bg-teal-500/20 border border-teal-500/30 rounded px-2 py-2 text-center">
+                    <div className="text-teal-300 font-semibold">Cloud Region Colo</div>
+                    <div className="text-slate-500 text-[10px]">egress</div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <div className="bg-teal-500/20 border border-teal-500/30 rounded px-2 py-1 text-teal-300 whitespace-nowrap">Cloud Region (e.g. aws:us-east-1)</div>
-                    <span className="text-slate-600">&#8594;</span>
-                    <div className="bg-slate-700 rounded px-2 py-1 text-slate-300 whitespace-nowrap">TCP Test</div>
-                  </div>
+                  <span className="text-slate-500">&#8594;</span>
+                  <div className="bg-slate-700 rounded px-2 py-1 text-slate-300">TCP Test</div>
                 </div>
                 <div className="text-slate-500 pt-1 border-t border-slate-700">
-                  <strong className="text-teal-400">Hint-based:</strong> Cloudflare places the Worker near the specified cloud region.
-                  Uses codes like <code className="bg-slate-800 px-1 rounded text-teal-300">aws:us-east-1</code>, <code className="bg-slate-800 px-1 rounded text-teal-300">gcp:europe-west1</code>.
+                  Uses cloud region codes: <code className="bg-slate-800 px-1 rounded text-teal-300">aws:us-east-1</code>, <code className="bg-slate-800 px-1 rounded text-teal-300">gcp:europe-west1</code>, etc.
                 </div>
               </div>
             </div>
 
             <p className="text-sm text-slate-300 leading-relaxed">
-              The <strong className="text-white">Colo</strong> column shows the IATA code of the data center that actually handled the request.
-              The <strong className="text-white">Smart Placement</strong> column shows the <code className="bg-slate-800 px-1 rounded text-slate-300">cf-placement</code> header
-              — <span className="text-purple-300">Forwarded</span> means Cloudflare moved the Worker to the target region,
-              while <span className="text-slate-400">Not Applied</span> means it ran locally.
+              <strong className="text-white">Ingress Colo</strong> is the data center that first received your request.
+              <strong className="text-white"> Egress Colo</strong> is where the Worker actually executed and ran the TCP test
+              — derived from the <code className="bg-slate-800 px-1 rounded text-slate-300">cf-placement</code> response header.
+              For Regional Services these are the same; for Targeted Placement the egress may differ.
             </p>
 
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 text-xs text-amber-300 leading-relaxed">
-              <strong className="text-amber-200">Note:</strong> Connections to IPs within Cloudflare's own network (AS13335) are blocked for security reasons.
-              If you enter a Cloudflare IP, the test will be disabled. Domains that resolve to Cloudflare IPs (e.g. sites using Cloudflare CDN)
-              may fail at the worker level since the TCP socket cannot connect back into Cloudflare's edge.
+              <strong className="text-amber-200">Note:</strong> Connections to targets on Cloudflare's network (AS13335) are blocked.
+              Hostnames are resolved via DNS and the resulting IP's ASN is looked up via Team Cymru WHOIS.
+              The test button will be disabled for any target on AS13335.
             </div>
 
             <div className="flex gap-3 text-xs pt-1">
@@ -676,12 +756,18 @@ function App() {
                   {hostError}
                 </p>
               )}
+              {isValidatingHost && !hostError && (
+                <p className="mt-1 text-sm text-slate-400 flex items-center gap-1">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Checking ASN...
+                </p>
+              )}
             </div>
 
             {/* Port Input */}
             <div>
-              <label htmlFor="port" className="block text-sm font-medium text-slate-300 mb-2">
-                Port Number
+              <label htmlFor="port" className="block text-sm font-medium text-slate-300 mb-2" title="Only TCP port testing is supported — UDP is not available via Cloudflare Workers Sockets API">
+                TCP Port Number
               </label>
               <input
                 id="port"
@@ -712,23 +798,24 @@ function App() {
 
         {/* Action Buttons */}
         <div className="flex gap-3 mb-6">
-          <button
-            onClick={runTest}
-            disabled={!canRun}
-            className="flex items-center gap-2 px-6 py-3 bg-primary hover:bg-primary-dark disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors"
-          >
-            {isRunning ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" />
-                Running Tests...
-              </>
-            ) : (
-              <>
-                <Play className="w-5 h-5" />
-                Run Connection Tests
-              </>
-            )}
-          </button>
+          {isRunning ? (
+            <button
+              onClick={stopTest}
+              className="flex items-center gap-2 px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors"
+            >
+              <Square className="w-4 h-4" />
+              Stop
+            </button>
+          ) : (
+            <button
+              onClick={runTest}
+              disabled={!canRun}
+              className="flex items-center gap-2 px-6 py-3 bg-primary hover:bg-primary-dark disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors"
+            >
+              <Play className="w-5 h-5" />
+              Run Connection Tests
+            </button>
+          )}
 
           {results.length > 0 && (
             <>
@@ -740,7 +827,7 @@ function App() {
                 Download CSV
               </button>
               <button
-                onClick={clearResults}
+                onClick={() => { stopTest(); clearResults(); }}
                 className="flex items-center gap-2 px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white font-semibold rounded-lg transition-colors"
               >
                 <Trash2 className="w-5 h-5" />
@@ -753,45 +840,34 @@ function App() {
         {/* Results Dashboard */}
         {results.length > 0 && (
           <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl border border-slate-700 overflow-hidden">
-            <div className="p-4 border-b border-slate-700 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                <Wifi className="w-5 h-5 text-primary" />
-                Connection Test Results
+            <div className="px-4 py-2 border-b border-slate-700 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+                <Wifi className="w-4 h-4 text-primary" />
+                {host}:{port}
+                {isRunning && <Loader2 className="w-3 h-3 animate-spin text-slate-400" />}
               </h2>
-              <div className="text-sm text-slate-400">
-                Target: {host}:{port}
+              <div className="text-xs text-slate-400">
+                {startTime && <>Started {new Date(startTime).toISOString().replace('T', ' ').slice(0, 19)} UTC</>}
               </div>
             </div>
 
             {/* Results Table */}
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="w-full text-xs">
                 <thead className="bg-slate-900/50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
-                      Region
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
-                      Latency
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
-                      Ingress Colo (City)
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
-                      Egress Colo (City)
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
-                      Timestamp
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
-                      Details
-                    </th>
+                    <th className="px-2 py-1.5 text-left font-medium text-slate-400 uppercase tracking-wider">Region</th>
+                    <th className="px-2 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-12">Sent</th>
+                    <th className="px-2 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-14">Loss%</th>
+                    <th className="px-2 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-14">Last</th>
+                    <th className="px-2 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-14">Avg</th>
+                    <th className="px-2 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-14">Best</th>
+                    <th className="px-2 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-14">Worst</th>
+                    <th className="px-2 py-1.5 text-left font-medium text-slate-400 uppercase tracking-wider">Ingress</th>
+                    <th className="px-2 py-1.5 text-left font-medium text-slate-400 uppercase tracking-wider">Egress</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-700">
+                <tbody className="divide-y divide-slate-700/50 font-mono">
                   {(() => {
                     let groupRowIndex = 0;
                     let prevType = '';
@@ -804,7 +880,6 @@ function App() {
                     }
                     const isEvenRow = groupRowIndex % 2 === 0;
                     groupRowIndex++;
-                    // Subtle left border color per group
                     const rowAccent = {
                       regional: 'border-l-2 border-l-orange-500/30',
                       aws: 'border-l-2 border-l-teal-500/30',
@@ -812,76 +887,61 @@ function App() {
                       azure: 'border-l-2 border-l-sky-500/30',
                     }[regionType];
                     const stripeBg = isEvenRow ? '' : 'bg-slate-800/30';
+
+                    const loss = result.sent > 0 ? (result.sent - result.received) / result.sent * 100 : 0;
+                    const last = result.latencies.length > 0 ? result.latencies[result.latencies.length - 1] : null;
+                    const avg = result.latencies.length > 0 ? Math.round(result.latencies.reduce((a, b) => a + b, 0) / result.latencies.length) : null;
+                    const best = result.latencies.length > 0 ? Math.min(...result.latencies) : null;
+                    const worst = result.latencies.length > 0 ? Math.max(...result.latencies) : null;
+                    const egress = getEgressColo(result);
+
                     return (<>
                     {group && (
                       <tr key={`group-${index}`}>
-                        <td colSpan={7} className={`px-6 py-2 text-xs font-semibold uppercase tracking-wider border-l-2 ${group.color}`}>
+                        <td colSpan={9} className={`px-2 py-1 text-xs font-semibold uppercase tracking-wider border-l-2 ${group.color}`}>
                           {group.label}
                         </td>
                       </tr>
                     )}
                     <tr
                       key={index}
-                      className={`hover:bg-slate-700/30 transition-colors ${rowAccent} ${stripeBg}`}
+                      className={`hover:bg-slate-700/30 ${rowAccent} ${stripeBg}`}
                     >
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
+                      <td className="px-2 py-1 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
                           {getStatusIcon(result.status)}
-                          <span className="text-sm font-medium text-white">
+                          <span className="font-sans text-xs text-white">
                             {result.regionName}
                           </span>
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        {getStatusBadge(result.status)}
+                      <td className="px-2 py-1 text-right text-slate-300">
+                        {result.sent || '-'}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm text-slate-300">
-                          {result.latencyMs !== undefined
-                            ? `${result.latencyMs}ms`
-                            : '-'}
-                        </span>
+                      <td className={`px-2 py-1 text-right ${loss === 0 ? 'text-green-400' : loss < 50 ? 'text-yellow-400' : 'text-red-400'}`}>
+                        {result.sent > 0 ? `${loss.toFixed(0)}%` : '-'}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm text-slate-300">
-                          {result.colo
-                            ? <><span className="font-mono">{result.colo}</span>{result.coloCity ? ` (${result.coloCity})` : ''}</>
-                            : '-'}
-                        </span>
+                      <td className="px-2 py-1 text-right text-slate-300">
+                        {last !== null ? last : '-'}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm text-slate-300">
-                          {(() => {
-                            if (regionType === 'regional') {
-                              // Regional Services: egress = ingress (guaranteed region)
-                              return result.colo
-                                ? <><span className="font-mono">{result.colo}</span>{result.coloCity ? ` (${result.coloCity})` : ''}</>
-                                : '-';
-                            }
-                            if (result.cfPlacement) {
-                              // Extract IATA code from "remote-IAD" or "local-IAH"
-                              const egressColo = result.cfPlacement.split('-').slice(1).join('-').toUpperCase();
-                              const egressCity = COLO_TO_CITY[egressColo] || '';
-                              return <><span className="font-mono">{egressColo}</span>{egressCity ? ` (${egressCity})` : ''}</>;
-                            }
-                            return '-';
-                          })()}
-                        </span>
+                      <td className="px-2 py-1 text-right text-slate-300">
+                        {avg !== null ? avg : '-'}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm text-slate-400">
-                          {result.timestamp
-                            ? new Date(result.timestamp).toLocaleTimeString()
-                            : '-'}
-                        </span>
+                      <td className="px-2 py-1 text-right text-green-400">
+                        {best !== null ? best : '-'}
                       </td>
-                      <td className="px-6 py-4">
-                        {result.error && (
-                          <span className="text-xs text-red-400">{result.error}</span>
-                        )}
-                        {result.status === 'connected' && !result.error && (
-                          <span className="text-xs text-green-400">Connected successfully</span>
-                        )}
+                      <td className="px-2 py-1 text-right text-red-400">
+                        {worst !== null ? worst : '-'}
+                      </td>
+                      <td className="px-2 py-1 whitespace-nowrap text-slate-300">
+                        {result.colo
+                          ? <><span>{result.colo}</span><span className="text-slate-500"> ({result.coloCity || '?'})</span></>
+                          : '-'}
+                      </td>
+                      <td className="px-2 py-1 whitespace-nowrap text-slate-300">
+                        {egress.colo
+                          ? <><span>{egress.colo}</span><span className="text-slate-500"> ({egress.city || '?'})</span></>
+                          : '-'}
                       </td>
                     </tr>
                     </>);
@@ -892,39 +952,17 @@ function App() {
             </div>
 
             {/* Summary Stats */}
-            <div className="p-4 bg-slate-900/30 border-t border-slate-700">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div>
-                  <div className="text-xs text-slate-400 mb-1">Total Tests</div>
-                  <div className="text-2xl font-bold text-white">{results.length}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-slate-400 mb-1">Connected</div>
-                  <div className="text-2xl font-bold text-green-500">
-                    {results.filter((r) => r.status === 'connected').length}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs text-slate-400 mb-1">Failed</div>
-                  <div className="text-2xl font-bold text-red-500">
-                    {results.filter((r) => r.status === 'failed' || r.status === 'timeout')
-                      .length}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs text-slate-400 mb-1">Avg Latency</div>
-                  <div className="text-2xl font-bold text-primary">
-                    {results.filter((r) => r.latencyMs).length > 0
-                      ? Math.round(
-                          results
-                            .filter((r) => r.latencyMs)
-                            .reduce((sum, r) => sum + (r.latencyMs || 0), 0) /
-                            results.filter((r) => r.latencyMs).length
-                        )
-                      : '-'}
-                    {results.filter((r) => r.latencyMs).length > 0 && 'ms'}
-                  </div>
-                </div>
+            <div className="px-4 py-2 bg-slate-900/30 border-t border-slate-700">
+              <div className="flex gap-6 text-xs">
+                <span className="text-slate-400">Regions: <span className="text-white font-semibold">{results.length}</span></span>
+                <span className="text-slate-400">Connected: <span className="text-green-400 font-semibold">{results.filter((r) => r.status === 'connected').length}</span></span>
+                <span className="text-slate-400">Failed: <span className="text-red-400 font-semibold">{results.filter((r) => r.status === 'failed').length}</span></span>
+                <span className="text-slate-400">Pending: <span className="text-slate-300 font-semibold">{results.filter((r) => r.status === 'pending').length}</span></span>
+                {results.some(r => r.latencies.length > 0) && (
+                  <span className="text-slate-400">Avg: <span className="text-primary font-semibold">
+                    {Math.round(results.filter(r => r.latencies.length > 0).reduce((sum, r) => sum + r.latencies.reduce((a, b) => a + b, 0) / r.latencies.length, 0) / results.filter(r => r.latencies.length > 0).length)}ms
+                  </span></span>
+                )}
               </div>
             </div>
           </div>
