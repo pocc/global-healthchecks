@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Handshake,
-  Wifi,
   Network,
   CheckCircle2,
   XCircle,
@@ -231,7 +230,7 @@ function App() {
   const dnsAbortRef = useRef<AbortController | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [startTime, setStartTime] = useState<number | null>(null);
-  const [homeLocation, setHomeLocation] = useState<{ lat: number; lng: number; city?: string; country?: string } | null>(null);
+  const [homeLocation, setHomeLocation] = useState<{ lat: number; lng: number; city?: string; country?: string; colo?: string } | null>(null);
   const [targetLocation, setTargetLocation] = useState<{ lat: number; lng: number; city?: string; country?: string } | null>(null);
 
   // Fetch user's geolocation from Cloudflare edge on mount
@@ -240,10 +239,10 @@ function App() {
       ? '/api/geo'
       : 'https://healthchecks.ross.gg/api/geo';
     fetch(geoUrl)
-      .then(res => res.json() as Promise<{ lat: number | null; lng: number | null; city?: string; country?: string }>)
+      .then(res => res.json() as Promise<{ lat: number | null; lng: number | null; city?: string; country?: string; colo?: string }>)
       .then((data) => {
         if (data.lat != null && data.lng != null) {
-          setHomeLocation({ lat: data.lat, lng: data.lng, city: data.city || undefined, country: data.country || undefined });
+          setHomeLocation({ lat: data.lat, lng: data.lng, city: data.city || undefined, country: data.country || undefined, colo: data.colo || undefined });
         }
       })
       .catch(() => { /* geo lookup failed — no home marker */ });
@@ -749,7 +748,7 @@ function App() {
                   <span className="text-slate-500">&#8594;</span>
                   <div className="bg-slate-700 rounded px-2 py-1 text-center">
                     <div className="text-slate-300">Nearest Edge</div>
-                    <div className="text-slate-500 text-[10px]">ingress</div>
+                    <div className="text-slate-500 text-[10px]">ingress{homeLocation?.colo ? ` (${homeLocation.colo})` : ''}</div>
                   </div>
                   <span className="text-teal-400">&#10230;</span>
                   <div className="bg-teal-500/20 border border-teal-500/30 rounded px-2 py-2 text-center">
@@ -773,7 +772,7 @@ function App() {
               <strong className="text-white">Ingress Colo</strong> is the data center that first received your request.
               <strong className="text-white"> Egress Colo</strong> is where the Worker actually executed and ran the TCP test.
               This is derived from the <code className="bg-slate-800 px-1 rounded text-slate-300">cf-placement</code> response header.
-              These will be the same with Regional Services and may differ for Region Placement.
+              These colos will be the same with Regional Services and may differ for Region Placement.
             </p>
 
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 text-xs text-amber-300 leading-relaxed">
@@ -909,19 +908,30 @@ function App() {
         {/* Results Dashboard */}
         {results.length > 0 && (
           <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl border border-slate-700 overflow-hidden">
-            <div className="px-4 py-2 border-b border-slate-700 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-white flex items-center gap-2">
-                <Wifi className="w-4 h-4 text-primary" />
-                {host}:{port}
-                {results.length > 0 && (
-                  <span className="text-slate-400 font-normal">
-                    &middot; {Math.max(...results.map(r => r.sent))} pings sent
-                  </span>
+            <div className="px-4 py-2 border-b border-slate-700">
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+                  <Network className="w-4 h-4 text-primary" />
+                  {host}:{port}
+                  {results.length > 0 && (
+                    <span className="text-slate-400 font-normal">
+                      &middot; {Math.max(...results.map(r => r.sent))} pings sent
+                    </span>
+                  )}
+                  {isRunning && <Loader2 className="w-3 h-3 animate-spin text-slate-400" />}
+                </h2>
+                {startTime && <span className="text-xs text-slate-500 ml-auto">{new Date(startTime).toISOString().replace('T', ' ').slice(0, 19)} UTC</span>}
+              </div>
+              <div className="flex gap-4 text-xs mt-1">
+                <span className="text-slate-400">Regions: <span className="text-white font-semibold">{results.length}</span></span>
+                <span className="text-slate-400">Connected: <span className="text-green-400 font-semibold">{results.filter((r) => r.status === 'connected').length}</span></span>
+                <span className="text-slate-400">Failed: <span className="text-red-400 font-semibold">{results.filter((r) => r.status === 'failed').length}</span></span>
+                <span className="text-slate-400">Pending: <span className="text-slate-300 font-semibold">{results.filter((r) => r.status === 'pending').length}</span></span>
+                {results.some(r => r.latencies.length > 0) && (
+                  <span className="text-slate-400">Avg: <span className="text-primary font-semibold">
+                    {Math.round(results.filter(r => r.latencies.length > 0).reduce((sum, r) => sum + r.latencies.reduce((a, b) => a + b, 0) / r.latencies.length, 0) / results.filter(r => r.latencies.length > 0).length)}ms
+                  </span></span>
                 )}
-                {isRunning && <Loader2 className="w-3 h-3 animate-spin text-slate-400" />}
-              </h2>
-              <div className="text-xs text-slate-400">
-                {startTime && <>Started {new Date(startTime).toISOString().replace('T', ' ').slice(0, 19)} UTC</>}
               </div>
             </div>
 
@@ -1025,20 +1035,6 @@ function App() {
               </table>
             </div>
 
-            {/* Summary Stats */}
-            <div className="px-4 py-2 bg-slate-900/30 border-t border-slate-700">
-              <div className="flex gap-6 text-xs">
-                <span className="text-slate-400">Regions: <span className="text-white font-semibold">{results.length}</span></span>
-                <span className="text-slate-400">Connected: <span className="text-green-400 font-semibold">{results.filter((r) => r.status === 'connected').length}</span></span>
-                <span className="text-slate-400">Failed: <span className="text-red-400 font-semibold">{results.filter((r) => r.status === 'failed').length}</span></span>
-                <span className="text-slate-400">Pending: <span className="text-slate-300 font-semibold">{results.filter((r) => r.status === 'pending').length}</span></span>
-                {results.some(r => r.latencies.length > 0) && (
-                  <span className="text-slate-400">Avg: <span className="text-primary font-semibold">
-                    {Math.round(results.filter(r => r.latencies.length > 0).reduce((sum, r) => sum + r.latencies.reduce((a, b) => a + b, 0) / r.latencies.length, 0) / results.filter(r => r.latencies.length > 0).length)}ms
-                  </span></span>
-                )}
-              </div>
-            </div>
           </div>
         )}
 
