@@ -20,3 +20,7 @@ route = { pattern = "healthchecks.ross.gg/*", zone_name = "ross.gg" }
 # [vars]
 # DEFAULT_PORT = "443"
 # TIMEOUT_MS = "5000"
+
+[observability.logs]
+enabled = true
+invocation_logs = true
