@@ -58,8 +58,8 @@ function getProvider(regionCode: string): string {
    Home → Worker (Cloudflare edge) → Target
    ═══════════════════════════════════════════════════════ */
 
-const DILATION = 10;        // 1ms latency → 10ms visual animation
-const MIN_LEG_MS = 500;     // minimum animation time per leg
+const DILATION = 1;         // 1:1 real-time latency animation
+const MIN_LEG_MS = 150;     // minimum animation time per leg
 const MAX_PACKETS = 50;     // concurrent packet cap
 const TRAIL_FADE = 1500;    // completed trail fade duration (ms)
 const RIPPLE_DUR = 400;     // impact ripple duration (ms)
