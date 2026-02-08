@@ -337,15 +337,19 @@ export const COLO_TO_CITY: Record<string, string> = {
   'YWG': 'Winnipeg, MB',
 
   // Oceania
+  'ADL': 'Adelaide, Australia',
   'AKL': 'Auckland, New Zealand',
   'BNE': 'Brisbane, Australia',
+  'CBR': 'Canberra, Australia',
   'CHC': 'Christchurch, New Zealand',
   'GUM': 'Hagåtña, Guam',
+  'HBA': 'Hobart, Australia',
   'MEL': 'Melbourne, Australia',
   'NAN': 'Nadi, Fiji',
   'NOU': 'Nouméa, New Caledonia',
   'PER': 'Perth, Australia',
   'PPT': 'Papeete, French Polynesia',
+  'SUV': 'Suva, Fiji',
   'SYD': 'Sydney, Australia',
 };
 
