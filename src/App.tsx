@@ -27,6 +27,7 @@ interface TestResult {
   timestamp?: number;
   error?: string;
   colo?: string;
+  cfPlacement?: string; // Smart Placement status (local-XXX or remote-XXX)
 }
 
 // Regional Services - User-friendly subdomains (Primary)
@@ -154,6 +155,9 @@ function App() {
           body: JSON.stringify(checkRequest),
         });
 
+        // Capture cf-placement header to see if Smart Placement moved the request
+        const cfPlacement = response.headers.get('cf-placement');
+
         const data = (await response.json()) as {
           success: boolean;
           latencyMs?: number;
@@ -172,6 +176,7 @@ function App() {
                   status: data.success ? 'connected' : 'failed',
                   latencyMs: data.latencyMs,
                   timestamp: data.timestamp || Date.now(),
+                  cfPlacement: cfPlacement || undefined,
                   error: data.error,
                   colo: data.colo,
                 }
@@ -500,6 +505,9 @@ function App() {
                       Execution Colo
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
+                      Smart Placement
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
                       Timestamp
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
@@ -535,6 +543,19 @@ function App() {
                         <span className="text-sm text-slate-300">
                           {result.colo || '-'}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {result.cfPlacement ? (
+                          <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                            result.cfPlacement.startsWith('local')
+                              ? 'bg-blue-500/20 text-blue-300'
+                              : 'bg-purple-500/20 text-purple-300'
+                          }`}>
+                            {result.cfPlacement.startsWith('local') ? '📍 Local' : '🔀 Forwarded'} ({result.cfPlacement})
+                          </span>
+                        ) : (
+                          <span className="text-sm text-slate-500">-</span>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className="text-sm text-slate-400">
