@@ -1,5 +1,7 @@
 # Smart Placement Explained
 
+> **Note:** This project now uses **Regional Services** (Enterprise feature) for guaranteed regional execution. See [REGIONAL_SERVICES.md](./REGIONAL_SERVICES.md) for comprehensive documentation on Regional Services vs Smart Placement.
+
 ## What Smart Placement Actually Does
 
 In Cloudflare, Smart Placement is effectively an **automated migration engine** for your Worker's execution location.
@@ -97,10 +99,14 @@ To see if Smart Placement moved your request, look for the `cf-placement` header
 ## Our Implementation
 
 In this project, we have:
-- **10 "Regional Services" subdomains** (us, ca, eu, de, jp, sg, kr, in, au, isoeu)
+- **10 Regional Services endpoints** (us, ca, eu, de, jp, sg, kr, in, au, isoeu) - **Enterprise feature enabled**
 - **9 Smart Placement hint workers** (enam, wnam, sam, weur, eeur, apac, oc, afr, me)
 
-All 19 endpoints use Smart Placement **hints**, not true Regional Services (which requires Enterprise). The hints are suggestions - Cloudflare may run the Worker anywhere for optimal performance.
+**Regional Services endpoints** (10) use guaranteed regional execution - Workers MUST execute within the specified geographic region.
+
+**Smart Placement endpoints** (9) use performance hints - Cloudflare may override hints and run the Worker anywhere for optimal performance.
+
+See [REGIONAL_SERVICES.md](./REGIONAL_SERVICES.md) for details on the Regional Services configuration and verification.
 
 ## Monitoring Smart Placement
 
