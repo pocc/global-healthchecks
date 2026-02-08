@@ -10,6 +10,7 @@ import {
   Trash2,
   Play,
   Server,
+  Download,
 } from 'lucide-react';
 import { COLO_TO_CITY } from './coloMapping';
 
@@ -313,6 +314,42 @@ function App() {
 
   const clearResults = () => {
     setResults([]);
+  };
+
+  const downloadCsv = () => {
+    const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
+    const headers = ['Region', 'Status', 'Latency (ms)', 'Ingress Colo', 'Ingress City', 'Egress Colo', 'Egress City', 'Timestamp', 'Details'];
+    const rows = results.map((r) => {
+      const regionType = getRegionType(r.region);
+      let egressColo = '';
+      let egressCity = '';
+      if (regionType === 'regional') {
+        egressColo = r.colo || '';
+        egressCity = r.coloCity || '';
+      } else if (r.cfPlacement) {
+        egressColo = r.cfPlacement.split('-').slice(1).join('-').toUpperCase();
+        egressCity = COLO_TO_CITY[egressColo] || '';
+      }
+      return [
+        escape(r.regionName),
+        r.status,
+        r.latencyMs !== undefined ? String(r.latencyMs) : '',
+        r.colo || '',
+        r.coloCity || '',
+        egressColo,
+        egressCity,
+        r.timestamp ? new Date(r.timestamp).toISOString() : '',
+        escape(r.error || (r.status === 'connected' ? 'Connected successfully' : '')),
+      ].join(',');
+    });
+    const csv = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `healthcheck-${host}-${port}-${new Date().toISOString().slice(0, 19)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const getRegionName = (code: string): string => {
@@ -694,13 +731,22 @@ function App() {
           </button>
 
           {results.length > 0 && (
-            <button
-              onClick={clearResults}
-              className="flex items-center gap-2 px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white font-semibold rounded-lg transition-colors"
-            >
-              <Trash2 className="w-5 h-5" />
-              Clear Results
-            </button>
+            <>
+              <button
+                onClick={downloadCsv}
+                className="flex items-center gap-2 px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white font-semibold rounded-lg transition-colors"
+              >
+                <Download className="w-5 h-5" />
+                Download CSV
+              </button>
+              <button
+                onClick={clearResults}
+                className="flex items-center gap-2 px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white font-semibold rounded-lg transition-colors"
+              >
+                <Trash2 className="w-5 h-5" />
+                Clear Results
+              </button>
+            </>
           )}
         </div>
 
