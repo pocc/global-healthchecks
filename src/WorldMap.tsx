@@ -91,13 +91,6 @@ const REGION_ANGLE: Record<string, number> = {};  // region code → petal angle
 const HUB_R = 6;         // normal petal offset (px)
 const HUB_R_HOVER = 14;  // expanded on hover (px)
 
-const PROVIDER_LABELS: Record<string, string> = {
-  cloudflare: 'Cloudflare',
-  aws: 'AWS',
-  gcp: 'GCP',
-  azure: 'Azure',
-};
-
 /* ═══════════════════════════════════════════════════════
    Multi-hop packet-path animation system
    Home → Worker (Cloudflare edge) → Target
@@ -474,8 +467,13 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
       const startAt = Date.now();
       // Use a raw latency value that yields DEMO_ANIM_MS at the current speed mult
       const demoLatency = DEMO_ANIM_MS / currentSpeedMult;
-      // Stagger packets 10ms apart for a wave effect
-      allRegions.forEach((region, i) => {
+      // Shuffle regions for organic wave effect
+      const shuffled = [...allRegions];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      shuffled.forEach((region, i) => {
         spawnPacket(region, demoLatency, home, target, false, startAt + i * 10);
       });
       // Trigger a redraw
@@ -798,7 +796,7 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
       ctx.arc(px, py, dotRadius, 0, 2 * Math.PI);
 
       if (!result || result.sent === 0) {
-        ctx.fillStyle = '#475569';
+        ctx.fillStyle = demoActive ? '#1e293b' : '#475569';
       } else if (result.status === 'connected') {
         ctx.fillStyle = colors.dot;
       } else if (result.status === 'failed') {
@@ -814,7 +812,11 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
         const dy = mouse[1] - py;
         if (dx * dx + dy * dy < 8 * 8) {
           const name = result?.regionName || regionCode;
-          tooltipBox.value = { x: px, y: py, name, provider: PROVIDER_LABELS[provider] || provider };
+          // Format region code: "azure-brazilsouth" → "azure:brazilsouth"
+          const regionLabel = regionCode.includes('-')
+            ? regionCode.replace('-', ':')
+            : regionCode;
+          tooltipBox.value = { x: px, y: py, name, provider: regionLabel };
         }
       }
     });
@@ -961,8 +963,8 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
       legendY -= 14;
     }
 
-    /* ── Continue animation loop if there are active elements ── */
-    if (packets.length || trails.length || ripples.length) {
+    /* ── Continue animation loop if there are active elements (or demo is running) ── */
+    if (packets.length || trails.length || ripples.length || demoActive) {
       animFrameRef.current = requestAnimationFrame(draw);
     }
   }, [land, dimensions, results, allRegions, homeLocation, targetLocation, speedMultiplier, demoTick]);

@@ -14,6 +14,7 @@ import {
   Globe,
   Volume2,
   VolumeX,
+  AlertTriangle,
 } from 'lucide-react';
 import { COLO_TO_CITY } from './coloMapping';
 import WorldMap from './WorldMap';
@@ -146,6 +147,114 @@ const WELL_KNOWN_PORTS: Record<number, string> = {
   11211: 'Memcached', 11434: 'Ollama', 15672: 'RabbitMQ Mgmt',
   25565: 'Minecraft', 27017: 'MongoDB', 32400: 'Plex',
 };
+
+// ── DNS-over-HTTPS helpers ──
+// Known DoH providers that support the JSON API (?name=X&type=Y with Accept: application/dns-json)
+const JSON_DOH_HOSTS = new Set(['cloudflare-dns.com', 'dns.google']);
+function isJsonDohProvider(url: string): boolean {
+  try { return JSON_DOH_HOSTS.has(new URL(url).hostname); }
+  catch { return false; }
+}
+
+// Build a minimal DNS wire-format query (RFC 1035 §4.1)
+function buildDnsWireQuery(name: string, qtype: number): Uint8Array {
+  const header = new Uint8Array(12);
+  crypto.getRandomValues(header.subarray(0, 2)); // random ID
+  header[2] = 0x01; // RD (recursion desired)
+  header[5] = 0x01; // QDCOUNT = 1
+  const q: number[] = [];
+  for (const label of name.split('.')) {
+    q.push(label.length);
+    for (let i = 0; i < label.length; i++) q.push(label.charCodeAt(i));
+  }
+  q.push(0, (qtype >> 8) & 0xff, qtype & 0xff, 0, 1); // root + QTYPE + QCLASS=IN
+  const msg = new Uint8Array(12 + q.length);
+  msg.set(header);
+  msg.set(q, 12);
+  return msg;
+}
+
+// Parse A/AAAA records from a DNS wire-format response
+function parseDnsWireResponse(buf: ArrayBuffer, qtype: number): string | null {
+  const d = new Uint8Array(buf);
+  if (d.length < 12) return null;
+  let off = 12;
+  // Skip question section
+  const qdcount = (d[4] << 8) | d[5];
+  for (let i = 0; i < qdcount; i++) {
+    while (off < d.length) {
+      if (d[off] === 0) { off++; break; }
+      if ((d[off] & 0xc0) === 0xc0) { off += 2; break; }
+      off += d[off] + 1;
+    }
+    off += 4; // QTYPE + QCLASS
+  }
+  // Parse answer section
+  const ancount = (d[6] << 8) | d[7];
+  for (let i = 0; i < ancount; i++) {
+    while (off < d.length) {
+      if (d[off] === 0) { off++; break; }
+      if ((d[off] & 0xc0) === 0xc0) { off += 2; break; }
+      off += d[off] + 1;
+    }
+    const rtype = (d[off] << 8) | d[off + 1];
+    off += 8; // TYPE(2) + CLASS(2) + TTL(4)
+    const rdlen = (d[off] << 8) | d[off + 1];
+    off += 2;
+    if (rtype === qtype) {
+      if (rtype === 1 && rdlen === 4) {
+        return `${d[off]}.${d[off + 1]}.${d[off + 2]}.${d[off + 3]}`;
+      }
+      if (rtype === 28 && rdlen === 16) {
+        const parts: string[] = [];
+        for (let j = 0; j < 16; j += 2)
+          parts.push(((d[off + j] << 8) | d[off + j + 1]).toString(16));
+        // Compress longest run of zero groups
+        let bs = -1, bl = 0, cs = -1, cl = 0;
+        parts.forEach((p, idx) => {
+          if (p === '0') { if (cs < 0) cs = idx; cl++; if (cl > bl) { bs = cs; bl = cl; } }
+          else { cs = -1; cl = 0; }
+        });
+        if (bl >= 2) {
+          const before = parts.slice(0, bs).join(':');
+          const after = parts.slice(bs + bl).join(':');
+          return (before || '') + '::' + (after || '');
+        }
+        return parts.join(':');
+      }
+    }
+    off += rdlen;
+  }
+  return null;
+}
+
+// Unified DoH resolver: JSON API for Cloudflare/Google, RFC 8484 wire format for others
+async function dohResolve(
+  provider: string, name: string, rrType: 'A' | 'AAAA', signal: AbortSignal,
+): Promise<string | null> {
+  const typeNum = rrType === 'AAAA' ? 28 : 1;
+  if (isJsonDohProvider(provider)) {
+    const res = await fetch(
+      `${provider}?name=${encodeURIComponent(name)}&type=${rrType}`,
+      { signal, headers: { Accept: 'application/dns-json' } },
+    );
+    const data: { Answer?: { type: number; data: string }[] } = await res.json();
+    return data.Answer?.find(a => a.type === typeNum)?.data ?? null;
+  }
+  // RFC 8484 wire format (GET with ?dns= to avoid CORS preflight)
+  const query = buildDnsWireQuery(name, typeNum);
+  const b64 = btoa(String.fromCharCode(...query)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const sep = provider.includes('?') ? '&' : '?';
+  const res = await fetch(
+    `${provider}${sep}dns=${b64}`,
+    { signal, headers: { Accept: 'application/dns-message' } },
+  );
+  const buf = await res.arrayBuffer();
+  return parseDnsWireResponse(buf, typeNum);
+}
+
+// NS lookup always uses Google JSON API (wire-format NS parsing requires name decompression)
+const NS_DOH = 'https://dns.google/resolve';
 
 // Complete list of OpenSSL TLS cipher suites with version compatibility
 // minVer/maxVer use TLS_VER_ORDER: TLSv1=1, TLSv1.1=2, TLSv1.2=3, TLSv1.3=4
@@ -368,6 +477,61 @@ const reverseIPv6Nibbles = (ip: string): string => {
   return groups.map(g => g.padStart(4, '0')).join('').split('').reverse().join('.');
 };
 
+// Continent mapping for region filtering
+type Continent = 'North America' | 'South America' | 'Europe' | 'Asia Pacific' | 'Middle East' | 'Africa' | 'Oceania';
+const CONTINENTS: Continent[] = ['North America', 'Europe', 'Asia Pacific', 'Oceania', 'Middle East', 'South America', 'Africa'];
+
+// Flag emoji → country name mapping (derived from provider region data)
+const FLAG_TO_COUNTRY: Record<string, string> = {
+  '🇺🇸': 'US', '🇨🇦': 'Canada', '🇲🇽': 'Mexico', '🇧🇷': 'Brazil', '🇨🇱': 'Chile',
+  '🇬🇧': 'UK', '🇩🇪': 'Germany', '🇫🇷': 'France', '🇮🇪': 'Ireland', '🇮🇹': 'Italy',
+  '🇪🇸': 'Spain', '🇸🇪': 'Sweden', '🇨🇭': 'Switzerland', '🇳🇱': 'Netherlands', '🇵🇱': 'Poland',
+  '🇧🇪': 'Belgium', '🇫🇮': 'Finland', '🇦🇹': 'Austria', '🇳🇴': 'Norway', '🇩🇰': 'Denmark',
+  '🇯🇵': 'Japan', '🇰🇷': 'South Korea', '🇮🇳': 'India', '🇸🇬': 'Singapore', '🇭🇰': 'Hong Kong',
+  '🇹🇼': 'Taiwan', '🇮🇩': 'Indonesia', '🇲🇾': 'Malaysia', '🇹🇭': 'Thailand',
+  '🇦🇺': 'Australia', '🇳🇿': 'New Zealand',
+  '🇮🇱': 'Israel', '🇧🇭': 'Bahrain', '🇦🇪': 'UAE', '🇶🇦': 'Qatar', '🇸🇦': 'Saudi Arabia',
+  '🇿🇦': 'South Africa',
+  '🇪🇺': 'EU', '🔒': 'ISO EU',
+};
+
+const REGION_TO_COUNTRY: Record<string, string> = Object.fromEntries(
+  [...REGIONAL_SERVICES, ...AWS_PLACEMENT, ...GCP_PLACEMENT, ...AZURE_PLACEMENT]
+    .map(r => [r.code, FLAG_TO_COUNTRY[r.flag] || r.flag])
+);
+
+function getCountry(code: string): string {
+  return REGION_TO_COUNTRY[code] || 'Unknown';
+}
+
+function getContinent(code: string): Continent {
+  // Cloudflare Regional Services
+  if (code === 'us' || code === 'ca') return 'North America';
+  if (code === 'eu' || code === 'isoeu' || code === 'de') return 'Europe';
+  if (code === 'jp' || code === 'kr' || code === 'sg' || code === 'in') return 'Asia Pacific';
+  if (code === 'au') return 'Oceania';
+
+  // Strip provider prefix for pattern matching
+  const geo = code.replace(/^(aws|gcp|azure)-/, '');
+
+  // North America
+  if (/^(us|ca|northamerica|centralus|eastus|westus|northcentralus|southcentralus|westcentralus|mexicocentral|mx)/.test(geo)) return 'North America';
+  // South America
+  if (/^(sa-|southamerica|brazil|chile)/.test(geo)) return 'South America';
+  // Europe
+  if (/^(eu-|europe|uk|france|germany|german|italy|spain|sweden|switzerland|norway|poland|denmark|belgium|austria|northeurope|westeurope)/.test(geo)) return 'Europe';
+  // Africa
+  if (/^(af-|africa|southafrica)/.test(geo)) return 'Africa';
+  // Middle East
+  if (/^(me-|il-|israel|qatar|uae)/.test(geo)) return 'Middle East';
+  // Oceania
+  if (/^(australia|newzealand)/.test(geo)) return 'Oceania';
+  // Asia Pacific (catch-all for ap-*, asia-*, japan*, korea*, india*, southeast*, eastasia, malaysia, indonesia)
+  if (/^(ap-|asia|japan|korea|india|southindia|centralindia|westindia|southeast|eastasia|malaysia|indonesia)/.test(geo)) return 'Asia Pacific';
+
+  return 'Asia Pacific'; // fallback
+}
+
 const CLOUDFLARE_ASN = '13335';
 
 // ASN cache -localStorage-backed with 7-day TTL
@@ -408,6 +572,7 @@ function App() {
   const [portError, setPortError] = useState('');
   const [resolvedIp, setResolvedIp] = useState('');
   const [dnsError, setDnsError] = useState('');
+  const [dnsWarning, setDnsWarning] = useState('');
   const [resolvedAsn, setResolvedAsn] = useState('');
   const [resolvedAsnName, setResolvedAsnName] = useState('');
   const [authNs, setAuthNs] = useState<string[]>([]);
@@ -448,6 +613,8 @@ function App() {
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [speedPanelOpen, setSpeedPanelOpen] = useState(false);
   const speedMultiplier = Math.pow(100, speedSlider / 100); // 1x at 0, 10x at 50, 100x at 100
+  const [continentFilter, setContinentFilter] = useState<Continent | null>(null);
+  const [countryFilter, setCountryFilter] = useState<string | null>(null);
 
   // TLS options (Layer 7 only)
   const [tlsServername, setTlsServername] = useState(params.get('sni') || host.trim());
@@ -511,6 +678,7 @@ function App() {
   const dnsAbortRef = useRef<AbortController | null>(null);
   const lastAsnHostRef = useRef('');
   const lastNsHostRef = useRef('');
+  const dnsCacheRef = useRef<Map<string, string>>(new Map()); // "host|type|provider" → resolved IP
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [startTime, setStartTime] = useState<number | null>(null);
   const [homeLocation, setHomeLocation] = useState<{ lat: number; lng: number; city?: string; country?: string; colo?: string } | null>(null);
@@ -554,6 +722,7 @@ function App() {
       setIsValidatingHost(false);
       setResolvedIp('');
       setDnsError('');
+      setDnsWarning('');
       return;
     }
 
@@ -565,9 +734,22 @@ function App() {
     const isIPv6 = ipv6Pattern.test(hostVal);
     const isHostname = !isIPv4 && !isIPv6 && hostnamePattern.test(hostVal);
 
+    // Fast path: if hostname has a cached DNS result for this record type, use it instantly
+    if (isHostname) {
+      const cacheKey = `${hostVal}|${dnsRecordType}|${dohProvider}`;
+      const cached = dnsCacheRef.current.get(cacheKey);
+      if (cached) {
+        setResolvedIp(cached);
+        setDnsError('');
+        setIsValidatingHost(false);
+        return;
+      }
+    }
+
     // Clear resolved state when input changes
     setResolvedIp('');
     setDnsError('');
+    setDnsWarning('');
     setResolvedAsn('');
     setResolvedAsnName('');
     // Only clear NS if the host actually changed (NS is record-type-independent)
@@ -593,6 +775,8 @@ function App() {
 
     const abortController = new AbortController();
     dnsAbortRef.current = abortController;
+    // Combine user abort with 5s timeout to prevent infinite hangs
+    const signal = AbortSignal.any([abortController.signal, AbortSignal.timeout(5000)]);
 
     const timer = setTimeout(async () => {
       try {
@@ -601,43 +785,43 @@ function App() {
 
         // If hostname, resolve to IP via selected DoH provider and record type
         if (isHostname) {
-          const rrType = dnsRecordType === 'AAAA' ? 28 : 1;
-          const dnsRes = await fetch(
-            `${dohProvider}?name=${encodeURIComponent(hostVal)}&type=${dnsRecordType}`,
-            { signal: abortController.signal, headers: { 'Accept': 'application/dns-json' } }
-          );
-          const dnsData: { Answer?: { type: number; data: string }[] } = await dnsRes.json();
-          const record = dnsData.Answer?.find(a => a.type === rrType);
-          if (!record) {
-            // Fallback: try the other record type
-            const fallbackType = dnsRecordType === 'AAAA' ? 'A' : 'AAAA';
-            const fallbackRR = fallbackType === 'AAAA' ? 28 : 1;
-            const fbRes = await fetch(
-              `${dohProvider}?name=${encodeURIComponent(hostVal)}&type=${fallbackType}`,
-              { signal: abortController.signal, headers: { 'Accept': 'application/dns-json' } }
-            );
-            const fbData: { Answer?: { type: number; data: string }[] } = await fbRes.json();
-            const fbRecord = fbData.Answer?.find(a => a.type === fallbackRR);
-            if (!fbRecord) {
-              setDnsError(`No A or AAAA record found for ${hostVal}`);
-              setIsValidatingHost(false);
-              return;
-            }
-            ip = fbRecord.data;
-            ipVersion = fallbackType === 'AAAA' ? 6 : 4;
+          const cacheKey = `${hostVal}|${dnsRecordType}|${dohProvider}`;
+          const cached = dnsCacheRef.current.get(cacheKey);
+          if (cached) {
+            ip = cached;
+            ipVersion = cached.includes(':') ? 6 : 4;
+            setResolvedIp(ip);
           } else {
-            ip = record.data;
-            ipVersion = dnsRecordType === 'AAAA' ? 6 : 4;
+            const resolved = await dohResolve(dohProvider, hostVal, dnsRecordType, signal);
+            if (!resolved) {
+              // Fallback: try the other record type
+              const fallbackType = dnsRecordType === 'AAAA' ? 'A' : 'AAAA';
+              const fbResolved = await dohResolve(dohProvider, hostVal, fallbackType, signal);
+              if (!fbResolved) {
+                setDnsError(`No A or AAAA record found for ${hostVal}`);
+                setIsValidatingHost(false);
+                return;
+              }
+              ip = fbResolved;
+              ipVersion = fallbackType === 'AAAA' ? 6 : 4;
+              dnsCacheRef.current.set(`${hostVal}|${fallbackType}|${dohProvider}`, ip);
+              setDnsWarning(`No ${dnsRecordType} record for ${hostVal}; switched to ${fallbackType}`);
+              setDnsRecordType(fallbackType);
+            } else {
+              ip = resolved;
+              ipVersion = dnsRecordType === 'AAAA' ? 6 : 4;
+              dnsCacheRef.current.set(cacheKey, ip);
+            }
+            setResolvedIp(ip);
           }
-          setResolvedIp(ip);
         }
 
-        // Fetch authoritative NS records for hostnames (skip if already cached for this host)
+        // Fetch authoritative NS records (always via Google JSON API — wire NS parsing is complex)
         if (isHostname && lastNsHostRef.current !== hostVal) {
           try {
             const nsRes = await fetch(
-              `${dohProvider}?name=${encodeURIComponent(hostVal)}&type=NS`,
-              { signal: abortController.signal, headers: { 'Accept': 'application/dns-json' } }
+              `${NS_DOH}?name=${encodeURIComponent(hostVal)}&type=NS`,
+              { signal, headers: { 'Accept': 'application/dns-json' } }
             );
             const nsData: { Answer?: { type: number; data: string }[], Authority?: { type: number; data: string }[] } = await nsRes.json();
             const nsRecords = (nsData.Answer ?? nsData.Authority ?? [])
@@ -797,7 +981,7 @@ function App() {
       clearTimeout(timer);
       abortController.abort();
     };
-  }, [host, hostTouched, dohProvider, dnsRecordType]);
+  }, [host, hostTouched, dnsRecordType]); // eslint-disable-line react-hooks/exhaustive-deps -- dohProvider read at fetch time; changing it shouldn't re-resolve
 
   const validateHost = (value: string): boolean => {
     if (!value.trim()) {
@@ -899,7 +1083,7 @@ function App() {
       if (value !== def) p.set(key, value);
       else p.delete(key);
     };
-    set('hostname', host.trim(), 'amazon.com');
+    set('hostname', host.trim(), 'globo.com');
     set('port', port, '443');
     set('layer', layer, 'l4');
     // L4 TCP controls
@@ -1014,23 +1198,6 @@ function App() {
     if (code.startsWith('gcp-')) return 'gcp';
     return 'azure';
   };
-
-  // Group boundaries for separator rows
-  const groupBoundaries = new Map<number, { label: string; color: string }>();
-  let currentGroup = '';
-  selectedRegions.forEach((code, index) => {
-    const type = getRegionType(code);
-    if (type !== currentGroup) {
-      currentGroup = type;
-      const labels: Record<string, { label: string; color: string }> = {
-        regional: { label: 'Cloudflare Regional Services', color: 'border-[#F38020]/40 bg-[#F38020]/5 text-[#F38020]' },
-        aws: { label: 'AWS Placement Hints', color: 'border-[#FACC15]/40 bg-[#FACC15]/5 text-[#FACC15]' },
-        gcp: { label: 'GCP Placement Hints', color: 'border-[#34A853]/40 bg-[#34A853]/5 text-[#34A853]' },
-        azure: { label: 'Azure Placement Hints', color: 'border-[#0078D4]/40 bg-[#0078D4]/5 text-[#0078D4]' },
-      };
-      groupBoundaries.set(index, labels[type]);
-    }
-  });
 
   const runSingleRound = () => {
     selectedRegions.forEach((regionCode, index) => {
@@ -1210,19 +1377,19 @@ function App() {
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
       {/* Header */}
       <header className="bg-slate-800/50 border-b border-slate-700 backdrop-blur-sm">
-        <div className="max-w-7xl mx-auto px-4 py-6">
+        <div className="max-w-7xl mx-auto px-4 py-3">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="bg-primary/10 p-3 rounded-lg">
-                <Handshake className="w-8 h-8 text-primary" />
+            <a href="/" className="flex items-center gap-3 no-underline">
+              <div className="bg-primary/10 p-2.5 rounded-lg">
+                <Handshake className="w-7 h-7 text-primary" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-white">Handshake Speed</h1>
-                <p className="text-slate-400 text-sm">
+                <h1 className="text-xl font-bold text-white">Handshake Speed</h1>
+                <p className="text-slate-400 text-xs">
                   Test Global Cloudflare TCP connectivity to your origin server
                 </p>
               </div>
-            </div>
+            </a>
             <button
               onClick={() => setAboutOpen(true)}
               className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-white transition-colors"
@@ -1414,6 +1581,12 @@ function App() {
                 <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-500"></span><span className="text-slate-300">&gt; 250ms</span></span>
               </div>
 
+              <div className="border-t border-slate-700 pt-3 mt-1">
+                <p className="text-xs text-slate-500 text-center">
+                  Powered by Cloudflare Workers Sockets API •{' '}
+                  <a href="https://developers.cloudflare.com/workers/runtime-apis/tcp-sockets/" target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary-dark transition-colors">Documentation</a>
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -1453,6 +1626,12 @@ function App() {
                 <p className="mt-1 text-sm text-red-400 flex items-center gap-1">
                   <XCircle className="w-4 h-4" />
                   {dnsError}
+                </p>
+              )}
+              {dnsWarning && !hostError && !dnsError && (
+                <p className="mt-1 text-sm text-amber-400 flex items-center gap-1">
+                  <AlertTriangle className="w-4 h-4" />
+                  {dnsWarning}
                 </p>
               )}
               {isValidatingHost && !hostError && !dnsError && (
@@ -1732,7 +1911,7 @@ function App() {
                     {[
                       { label: 'Cloudflare', url: 'https://cloudflare-dns.com/dns-query' },
                       { label: 'Google', url: 'https://dns.google/resolve' },
-                      { label: 'Quad9', url: 'https://dns.quad9.net:5053/dns-query' },
+                      { label: 'Quad9', url: 'https://dns.quad9.net/dns-query' },
                     ].map((p) => (
                       <button
                         key={p.label}
@@ -1977,15 +2156,15 @@ function App() {
                         }}
                         className="w-full px-3 py-2 bg-slate-900/50 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                       >
-                        <option value="GET">GET -- retrieve resource</option>
-                        <option value="HEAD">HEAD -- headers only</option>
-                        <option value="POST">POST -- submit data</option>
-                        <option value="PUT">PUT -- replace resource</option>
-                        <option value="DELETE">DELETE -- remove resource</option>
-                        <option value="CONNECT">CONNECT -- establish tunnel</option>
-                        <option value="OPTIONS">OPTIONS -- describe options</option>
-                        <option value="TRACE">TRACE -- loop-back test</option>
-                        <option value="PATCH">PATCH -- partial update</option>
+                        <option value="GET">GET</option>
+                        <option value="HEAD">HEAD</option>
+                        <option value="POST">POST</option>
+                        <option value="PUT">PUT</option>
+                        <option value="DELETE">DELETE</option>
+                        <option value="CONNECT">CONNECT</option>
+                        <option value="OPTIONS">OPTIONS</option>
+                        <option value="TRACE">TRACE</option>
+                        <option value="PATCH">PATCH</option>
                         <option value="_custom">METHOD TO THE MADNESS -- custom method</option>
                       </select>
                       {!['GET','HEAD','POST','PUT','DELETE','CONNECT','OPTIONS','TRACE','PATCH'].includes(httpMethod) && (
@@ -2170,8 +2349,23 @@ function App() {
         </div>
 
         {/* World Map */}
-        <div className="mb-6 relative">
-          <WorldMap results={results} allRegions={selectedRegions} homeLocation={homeLocation} targetLocation={targetLocation} speedMultiplier={speedMultiplier} soundEnabled={soundEnabled} />
+        <div className="mb-4 relative">
+          <WorldMap
+            results={continentFilter || countryFilter ? results.filter(r => {
+              if (continentFilter && getContinent(r.region) !== continentFilter) return false;
+              if (countryFilter && getCountry(r.region) !== countryFilter) return false;
+              return true;
+            }) : results}
+            allRegions={continentFilter || countryFilter ? selectedRegions.filter(code => {
+              if (continentFilter && getContinent(code) !== continentFilter) return false;
+              if (countryFilter && getCountry(code) !== countryFilter) return false;
+              return true;
+            }) : selectedRegions}
+            homeLocation={homeLocation}
+            targetLocation={targetLocation}
+            speedMultiplier={speedMultiplier}
+            soundEnabled={soundEnabled}
+          />
           {/* Demo overlay — empty state message over the map */}
           {!results.some(r => r.sent > 0) && (
             <div className="absolute inset-0 flex items-center justify-center rounded-xl transition-opacity duration-500 pointer-events-none">
@@ -2194,7 +2388,11 @@ function App() {
                   min={0}
                   max={100}
                   value={speedSlider}
-                  onChange={(e) => setSpeedSlider(Number(e.target.value))}
+                  onChange={(e) => {
+                    let v = Number(e.target.value);
+                    if (Math.abs(v - 50) <= 3) v = 50;
+                    setSpeedSlider(v);
+                  }}
                   className="w-20 h-1 appearance-none bg-slate-700 rounded-full cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-slate-400 [&::-webkit-slider-thumb]:hover:bg-white"
                 />
                 <span className="text-[9px] text-slate-600 font-mono select-none">100×</span>
@@ -2209,7 +2407,7 @@ function App() {
             )}
             <button
               onClick={() => setSpeedPanelOpen(!speedPanelOpen)}
-              className="text-[10px] font-mono text-slate-600 hover:text-slate-400 transition-colors px-1.5 py-0.5 rounded bg-slate-900/40 border border-transparent hover:border-slate-700/50 select-none"
+              className="text-[10px] font-mono text-slate-600 hover:text-slate-400 transition-colors py-0.5 rounded bg-slate-900/40 border border-transparent hover:border-slate-700/50 select-none w-[38px] text-center"
               title="Animation speed"
             >
               {speedMultiplier < 10 ? speedMultiplier.toFixed(1) : Math.round(speedMultiplier)}×
@@ -2245,6 +2443,60 @@ function App() {
                   </span></span>
                 )}
               </div>
+              {/* Continent filter chips */}
+              <div className="flex flex-wrap gap-1 mt-1.5">
+                <button
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => { setContinentFilter(null); setCountryFilter(null); }}
+                  className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${continentFilter === null ? 'bg-slate-600 text-white' : 'bg-slate-700/50 text-slate-500 hover:text-slate-300'}`}
+                >
+                  All
+                </button>
+                {CONTINENTS.map(c => {
+                  const count = results.filter(r => getContinent(r.region) === c).length;
+                  if (count === 0) return null;
+                  return (
+                    <button
+                      key={c}
+                      onMouseDown={e => e.preventDefault()}
+                      onClick={() => { setContinentFilter(continentFilter === c ? null : c); setCountryFilter(null); }}
+                      className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${continentFilter === c ? 'bg-slate-600 text-white' : 'bg-slate-700/50 text-slate-500 hover:text-slate-300'}`}
+                    >
+                      {c} <span className="opacity-60">{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {/* Country filter chips (2nd row, when continent selected) */}
+              {continentFilter && (() => {
+                const continentResults = results.filter(r => getContinent(r.region) === continentFilter);
+                const countries = [...new Set(continentResults.map(r => getCountry(r.region)))].sort();
+                if (countries.length === 0) return null;
+                return (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    <button
+                      onMouseDown={e => e.preventDefault()}
+                      onClick={() => setCountryFilter(null)}
+                      className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${countryFilter === null ? 'bg-slate-500 text-white' : 'bg-slate-700/50 text-slate-500 hover:text-slate-300'}`}
+                    >
+                      All
+                    </button>
+                    {countries.map(country => {
+                      const count = continentResults.filter(r => getCountry(r.region) === country).length;
+                      return (
+                        <button
+                          key={country}
+                          onMouseDown={e => e.preventDefault()}
+                          onClick={() => setCountryFilter(countryFilter === country ? null : country)}
+                          className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${countryFilter === country ? 'bg-slate-500 text-white' : 'bg-slate-700/50 text-slate-500 hover:text-slate-300'}`}
+                        >
+                          {country} <span className="opacity-60">{count}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Results Table */}
@@ -2273,10 +2525,18 @@ function App() {
                   {(() => {
                     let groupRowIndex = 0;
                     let prevType = '';
-                    return results.map((result, index) => {
-                    const group = groupBoundaries.get(index);
+                    let filtered = continentFilter ? results.filter(r => getContinent(r.region) === continentFilter) : results;
+                    if (countryFilter) filtered = filtered.filter(r => getCountry(r.region) === countryFilter);
+                    const groupLabels: Record<string, { label: string; color: string }> = {
+                      regional: { label: 'Cloudflare Regional Services', color: 'border-[#F38020]/40 bg-[#F38020]/5 text-[#F38020]' },
+                      aws: { label: 'AWS Placement Hints', color: 'border-[#FACC15]/40 bg-[#FACC15]/5 text-[#FACC15]' },
+                      gcp: { label: 'GCP Placement Hints', color: 'border-[#34A853]/40 bg-[#34A853]/5 text-[#34A853]' },
+                      azure: { label: 'Azure Placement Hints', color: 'border-[#0078D4]/40 bg-[#0078D4]/5 text-[#0078D4]' },
+                    };
+                    return filtered.map((result, fi) => {
                     const regionType = getRegionType(result.region);
-                    if (regionType !== prevType) {
+                    const showGroup = regionType !== prevType;
+                    if (showGroup) {
                       groupRowIndex = 0;
                       prevType = regionType;
                     }
@@ -2297,17 +2557,18 @@ function App() {
                     const best = result.latencies.length > 0 ? Math.min(...result.latencies) : null;
                     const worst = result.latencies.length > 0 ? Math.max(...result.latencies) : null;
                     const egress = getEgressColo(result);
+                    const grp = showGroup ? groupLabels[regionType] : null;
 
                     return (<>
-                    {group && (
-                      <tr key={`group-${index}`}>
-                        <td colSpan={layer === 'l4' ? 8 : 11} className={`px-3 py-1.5 text-xs font-semibold uppercase tracking-wider border-l-2 ${group.color}`}>
-                          {group.label}
+                    {grp && (
+                      <tr key={`group-${fi}`}>
+                        <td colSpan={layer === 'l4' ? 8 : 11} className={`px-3 py-1.5 text-xs font-semibold uppercase tracking-wider border-l-2 ${grp.color}`}>
+                          {grp.label}
                         </td>
                       </tr>
                     )}
                     <tr
-                      key={index}
+                      key={fi}
                       className={`hover:bg-slate-700/30 ${rowAccent} ${stripeBg}`}
                     >
                       <td className="px-3 py-1.5 whitespace-nowrap">
@@ -2384,22 +2645,6 @@ function App() {
 
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-slate-700 mt-12">
-        <div className="max-w-7xl mx-auto px-4 py-6">
-          <p className="text-center text-sm text-slate-500">
-            Powered by Cloudflare Workers Sockets API •{' '}
-            <a
-              href="https://developers.cloudflare.com/workers/runtime-apis/tcp-sockets/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-primary hover:text-primary-dark transition-colors"
-            >
-              Documentation
-            </a>
-          </p>
-        </div>
-      </footer>
     </div>
   );
 }
