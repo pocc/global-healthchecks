@@ -93,11 +93,13 @@ async function singleTcpAttempt(
       { secureTransport: 'off', allowHalfOpen: false }
     );
 
+    let timer: ReturnType<typeof setTimeout>;
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Connection timeout')), connectMs);
+      timer = setTimeout(() => reject(new Error('Connection timeout')), connectMs);
     });
 
     await Promise.race([socket.opened, timeoutPromise]);
+    clearTimeout(timer!);
     const latencyMs = Date.now() - startTime;
     await socket.close();
 
@@ -157,10 +159,12 @@ async function testTlsPort(
   return new Promise((resolve) => {
     let resolved = false;
     let tcpMs: number | undefined;
+    let timer: ReturnType<typeof setTimeout> = undefined as any;
 
     const done = (result: HealthCheckResult) => {
       if (resolved) return;
       resolved = true;
+      clearTimeout(timer);
       resolve(result);
     };
 
@@ -172,10 +176,10 @@ async function testTlsPort(
       servername: sni,           // SNI
     };
 
-    if (request.minTlsVersion) {
+    if (request.minTlsVersion && VALID_TLS_VERSIONS.has(request.minTlsVersion)) {
       opts.minVersion = request.minTlsVersion as tls.SecureVersion;
     }
-    if (request.maxTlsVersion) {
+    if (request.maxTlsVersion && VALID_TLS_VERSIONS.has(request.maxTlsVersion)) {
       opts.maxVersion = request.maxTlsVersion as tls.SecureVersion;
     }
     if (request.ciphers) {
@@ -257,7 +261,7 @@ async function testTlsPort(
       socket.destroy();
     });
 
-    setTimeout(() => {
+    timer = setTimeout(() => {
       done({
         success: false,
         host: request.host,
@@ -280,7 +284,8 @@ async function testTlsPort(
  */
 async function testHttpPort(
   request: HealthCheckRequest,
-  redirectCount = 0
+  redirectCount = 0,
+  visitedUrls: Set<string> = new Set()
 ): Promise<HealthCheckResult> {
   const startTime = Date.now();
   const timeout = request.timeout || 5000;
@@ -290,10 +295,12 @@ async function testHttpPort(
     let tcpMs: number | undefined;
     let tlsMs: number | undefined;
     let httpSentAt: number | undefined;
+    let timer: ReturnType<typeof setTimeout> = undefined as any;
 
     const done = (result: HealthCheckResult) => {
       if (resolved) return;
       resolved = true;
+      clearTimeout(timer);
       resolve(result);
     };
 
@@ -305,10 +312,10 @@ async function testHttpPort(
       servername: sni,
     };
 
-    if (request.minTlsVersion) {
+    if (request.minTlsVersion && VALID_TLS_VERSIONS.has(request.minTlsVersion)) {
       opts.minVersion = request.minTlsVersion as tls.SecureVersion;
     }
-    if (request.maxTlsVersion) {
+    if (request.maxTlsVersion && VALID_TLS_VERSIONS.has(request.maxTlsVersion)) {
       opts.maxVersion = request.maxTlsVersion as tls.SecureVersion;
     }
     if (request.ciphers) {
@@ -358,14 +365,25 @@ async function testHttpPort(
       }
 
       // Build and send HTTP request -use SNI for Host header too
-      const method = request.httpMethod || 'HEAD';
-      const path = request.httpPath || '/';
+      // Sanitize method: whitelist allowed methods
+      const ALLOWED_METHODS = ['GET', 'HEAD', 'POST', 'OPTIONS'];
+      const method = ALLOWED_METHODS.includes((request.httpMethod || 'GET').toUpperCase())
+        ? (request.httpMethod || 'GET').toUpperCase()
+        : 'GET';
+      // Sanitize path: reject CRLF injection
+      const rawPath = request.httpPath || '/';
+      const path = /[\r\n]/.test(rawPath) ? '/' : rawPath;
       const lines = [
         `${method} ${path} HTTP/1.1`,
         `Host: ${sni}`,
       ];
       if (request.httpHeaders) {
+        const RESERVED_HEADERS = ['host', 'connection', 'content-length', 'transfer-encoding'];
         for (const [key, value] of Object.entries(request.httpHeaders)) {
+          // Skip headers containing CRLF (header injection)
+          if (/[\r\n]/.test(key) || /[\r\n]/.test(value)) continue;
+          // Skip reserved headers that could break the request
+          if (RESERVED_HEADERS.includes(key.toLowerCase())) continue;
           lines.push(`${key}: ${value}`);
         }
       }
@@ -408,13 +426,49 @@ async function testHttpPort(
             const redirectPort = parseInt(redirectUrl.port) || (redirectUrl.protocol === 'https:' ? 443 : 80);
             const redirectPath = redirectUrl.pathname + redirectUrl.search;
 
+            // SSRF protection: validate redirect target
+            const redirectBlocked = isBlockedHost(redirectHost);
+            if (redirectBlocked) {
+              done({
+                success: false,
+                host: request.host,
+                port: request.port,
+                region: request.region,
+                latencyMs: Date.now() - startTime,
+                error: `Redirect to blocked host: ${redirectBlocked}`,
+                timestamp: Date.now(),
+                tcpMs,
+                redirectCount: redirectCount + 1,
+                redirectUrl: redirectUrl.href,
+              });
+              return;
+            }
+
+            // Redirect loop detection
+            if (visitedUrls.has(redirectUrl.href)) {
+              done({
+                success: false,
+                host: request.host,
+                port: request.port,
+                region: request.region,
+                latencyMs: Date.now() - startTime,
+                error: `Redirect loop detected: ${redirectUrl.href}`,
+                timestamp: Date.now(),
+                tcpMs,
+                redirectCount: redirectCount + 1,
+                redirectUrl: redirectUrl.href,
+              });
+              return;
+            }
+            visitedUrls.add(redirectUrl.href);
+
             testHttpPort({
               ...request,
               host: redirectHost,
               port: redirectPort,
               httpPath: redirectPath,
               tlsServername: redirectHost,
-            }, redirectCount + 1).then((result) => {
+            }, redirectCount + 1, visitedUrls).then((result) => {
               done({
                 ...result,
                 // Preserve original request's host/port for reporting
@@ -477,7 +531,7 @@ async function testHttpPort(
       socket.destroy();
     });
 
-    setTimeout(() => {
+    timer = setTimeout(() => {
       done({
         success: false,
         host: request.host,
@@ -492,6 +546,63 @@ async function testHttpPort(
       socket.destroy();
     }, timeout);
   });
+}
+
+const VALID_TLS_VERSIONS = new Set(['TLSv1', 'TLSv1.1', 'TLSv1.2', 'TLSv1.3']);
+
+/**
+ * SSRF protection: block connections to private/internal/link-local addresses.
+ * Returns an error string if blocked, or null if allowed.
+ */
+function isBlockedHost(host: string): string | null {
+  // Normalize to lowercase for comparison
+  const h = host.toLowerCase().trim();
+
+  // Block empty hosts
+  if (!h) return 'Empty host';
+
+  // Strip brackets from IPv6 (e.g. [::1] → ::1)
+  const stripped = h.startsWith('[') && h.endsWith(']') ? h.slice(1, -1) : h;
+
+  // Block IPv6 loopback, unspecified, private (fc00::/7), link-local (fe80::/10)
+  if (stripped === '::1' || stripped === '::') {
+    return 'Loopback/unspecified address blocked';
+  }
+  if (/^f[cd][0-9a-f]{0,2}:/i.test(stripped)) return 'IPv6 private (fc00::/7) blocked';
+  if (/^fe[89ab][0-9a-f]:/i.test(stripped)) return 'IPv6 link-local (fe80::/10) blocked';
+  // Block IPv4-mapped IPv6 (::ffff:x.x.x.x)
+  if (/^::ffff:/i.test(stripped)) return 'IPv4-mapped IPv6 address blocked';
+
+  // Block well-known internal hostnames
+  if (h === 'localhost' || h.endsWith('.localhost') ||
+      h === 'metadata.google.internal' ||
+      h.endsWith('.internal')) {
+    return 'Internal hostname blocked';
+  }
+
+  // Check if it's an IPv4 address
+  const ipv4Match = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4Match) {
+    const [, a, b, c] = ipv4Match.map(Number);
+    // 127.0.0.0/8 loopback
+    if (a === 127) return 'Loopback address blocked';
+    // 0.0.0.0/8
+    if (a === 0) return 'Unspecified address blocked';
+    // 10.0.0.0/8
+    if (a === 10) return 'Private address (10/8) blocked';
+    // 172.16.0.0/12
+    if (a === 172 && b >= 16 && b <= 31) return 'Private address (172.16/12) blocked';
+    // 192.168.0.0/16
+    if (a === 192 && b === 168) return 'Private address (192.168/16) blocked';
+    // 169.254.0.0/16 link-local (includes cloud metadata 169.254.169.254)
+    if (a === 169 && b === 254) return 'Link-local address blocked';
+    // 100.64.0.0/10 CGNAT
+    if (a === 100 && b >= 64 && b <= 127) return 'CGNAT address blocked';
+    // 192.0.0.0/24 IETF protocol assignments
+    if (a === 192 && b === 0 && c === 0) return 'IETF reserved address blocked';
+  }
+
+  return null;
 }
 
 interface Env {
@@ -629,6 +740,21 @@ export default {
           );
         }
 
+        // SSRF protection: block private/internal hosts
+        const blocked = isBlockedHost(body.host);
+        if (blocked) {
+          return new Response(
+            JSON.stringify({ error: `Blocked host: ${blocked}` }),
+            {
+              status: 400,
+              headers: {
+                'Content-Type': 'application/json',
+                ...corsHeaders
+              }
+            }
+          );
+        }
+
         const result = body.httpEnabled
           ? await testHttpPort(body)
           : body.tlsEnabled
@@ -699,6 +825,29 @@ export default {
               }
             }
           );
+        }
+
+        // Validate each check in the batch
+        for (const check of body.checks) {
+          if (!check.host || !check.port) {
+            return new Response(
+              JSON.stringify({ error: 'Each check must have host and port' }),
+              { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+            );
+          }
+          if (check.port < 1 || check.port > 65535) {
+            return new Response(
+              JSON.stringify({ error: `Invalid port ${check.port}: must be between 1 and 65535` }),
+              { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+            );
+          }
+          const batchBlocked = isBlockedHost(check.host);
+          if (batchBlocked) {
+            return new Response(
+              JSON.stringify({ error: `Blocked host ${check.host}: ${batchBlocked}` }),
+              { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+            );
+          }
         }
 
         // Execute all checks in parallel

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, Fragment } from 'react';
 import {
   Handshake,
   Network,
@@ -583,12 +583,12 @@ function App() {
   const ipv6Re = /^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|::([fF]{4}(:0{1,4})?:)?((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.){3}(25[0-5]|(2[0-4]|1?[0-9])?[0-9]))$/;
   const trimmedHost = host.trim();
   const isHostnameInput = trimmedHost.length > 0 && !ipv4Re.test(trimmedHost) && !ipv6Re.test(trimmedHost);
-  const selectedRegions = [
+  const selectedRegions = useMemo(() => [
     ...REGIONAL_SERVICES.map((r) => r.code),
     ...AWS_PLACEMENT.map((r) => r.code),
     ...GCP_PLACEMENT.map((r) => r.code),
     ...AZURE_PLACEMENT.map((r) => r.code)
-  ];
+  ], []);
   const [results, setResults] = useState<TestResult[]>([]);
   const [isRunning, setIsRunning] = useState(false);
 
@@ -657,7 +657,7 @@ function App() {
   const [dnsRecordType, setDnsRecordType] = useState<'A' | 'AAAA'>((params.get('dns') as 'A' | 'AAAA') || 'A');
 
   // HTTP options -always active in Full Stack mode
-  const [httpMethod, setHttpMethod] = useState(params.get('method') || 'HEAD');
+  const [httpMethod, setHttpMethod] = useState(params.get('method') || 'GET');
   const [customHttpMethod, setCustomHttpMethod] = useState('PROPFIND');
   const [httpPath, setHttpPath] = useState(params.get('path') || '/');
   const [expectedStatus, setExpectedStatus] = useState(params.get('expect') || '200');
@@ -680,6 +680,7 @@ function App() {
   const lastNsHostRef = useRef('');
   const dnsCacheRef = useRef<Map<string, string>>(new Map()); // "host|type|provider" → resolved IP
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fetchAbortRef = useRef<AbortController | null>(null);
   const [startTime, setStartTime] = useState<number | null>(null);
   const [homeLocation, setHomeLocation] = useState<{ lat: number; lng: number; city?: string; country?: string; colo?: string } | null>(null);
   const [targetLocation, setTargetLocation] = useState<{ lat: number; lng: number; city?: string; country?: string } | null>(null);
@@ -964,12 +965,16 @@ function App() {
             // Try next provider
           }
         }
-        setTargetLocation({
-          lat: geoResult?.lat ?? 0,
-          lng: geoResult?.lng ?? 0,
-          city: geoResult?.city || undefined,
-          country: geoResult?.country || undefined,
-        });
+        if (geoResult && (geoResult.lat !== 0 || geoResult.lng !== 0)) {
+          setTargetLocation({
+            lat: geoResult.lat,
+            lng: geoResult.lng,
+            city: geoResult.city || undefined,
+            country: geoResult.country || undefined,
+          });
+        } else {
+          setTargetLocation(null);
+        }
       } catch (e) {
         if (e instanceof DOMException && e.name === 'AbortError') return;
         // ASN lookup failed -allow the test to proceed
@@ -1103,7 +1108,7 @@ function App() {
     set('maxTls', maxTlsVersion, '');
     if (selectedCiphers.size > 0) p.set('ciphers', [...selectedCiphers].join(','));
     else p.delete('ciphers');
-    set('method', httpMethod, 'HEAD');
+    set('method', httpMethod, 'GET');
     set('path', httpPath, '/');
     set('expect', expectedStatus, '200');
     const defaultHeaders = 'User-Agent: Mozilla/5.0\nAccept: text/html';
@@ -1200,6 +1205,7 @@ function App() {
   };
 
   const runSingleRound = () => {
+    const signal = fetchAbortRef.current?.signal;
     selectedRegions.forEach((regionCode, index) => {
       // Parse custom headers from raw text
       const parsedHeaders: Record<string, string> = {};
@@ -1253,6 +1259,7 @@ function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(checkRequest),
+        signal,
       })
         .then(async (response) => {
           const cfPlacement = response.headers.get('cf-placement');
@@ -1312,6 +1319,8 @@ function App() {
           );
         })
         .catch((error) => {
+          // Silently ignore aborted requests (user stopped the test)
+          if (error instanceof DOMException && error.name === 'AbortError') return;
           setResults((prev) =>
             prev.map((r, i) =>
               i === index
@@ -1331,6 +1340,10 @@ function App() {
 
   const runTest = () => {
     if (!host || !port) return;
+
+    // Abort any previous in-flight requests
+    fetchAbortRef.current?.abort();
+    fetchAbortRef.current = new AbortController();
 
     setIsRunning(true);
     setStartTime(Date.now());
@@ -1359,6 +1372,9 @@ function App() {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
+    // Abort all in-flight fetch requests
+    fetchAbortRef.current?.abort();
+    fetchAbortRef.current = null;
     setIsRunning(false);
   };
 
@@ -2533,7 +2549,7 @@ function App() {
                       gcp: { label: 'GCP Placement Hints', color: 'border-[#34A853]/40 bg-[#34A853]/5 text-[#34A853]' },
                       azure: { label: 'Azure Placement Hints', color: 'border-[#0078D4]/40 bg-[#0078D4]/5 text-[#0078D4]' },
                     };
-                    return filtered.map((result, fi) => {
+                    return filtered.map((result) => {
                     const regionType = getRegionType(result.region);
                     const showGroup = regionType !== prevType;
                     if (showGroup) {
@@ -2559,16 +2575,15 @@ function App() {
                     const egress = getEgressColo(result);
                     const grp = showGroup ? groupLabels[regionType] : null;
 
-                    return (<>
+                    return (<Fragment key={result.region}>
                     {grp && (
-                      <tr key={`group-${fi}`}>
+                      <tr>
                         <td colSpan={layer === 'l4' ? 8 : 11} className={`px-3 py-1.5 text-xs font-semibold uppercase tracking-wider border-l-2 ${grp.color}`}>
                           {grp.label}
                         </td>
                       </tr>
                     )}
                     <tr
-                      key={fi}
                       className={`hover:bg-slate-700/30 ${rowAccent} ${stripeBg}`}
                     >
                       <td className="px-3 py-1.5 whitespace-nowrap">
@@ -2633,7 +2648,7 @@ function App() {
                         )}
                       </td>
                     </tr>
-                    </>);
+                    </Fragment>);
                   });
                   })()}
                 </tbody>

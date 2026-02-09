@@ -1,3 +1,4 @@
+import React from 'react';
 import { describe, it, expect } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -75,8 +76,7 @@ function HealthCheckForm() {
   );
 }
 
-// Import React for the component
-import React from 'react';
+
 
 describe('Health Check API Integration', () => {
   it('should successfully fetch health check data', async () => {

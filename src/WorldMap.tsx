@@ -102,6 +102,44 @@ const MAX_PACKETS = 300;    // 2 concurrent rounds of 143 regions
 const TRAIL_FADE_NORMAL = 1500;    // completed trail fade duration (ms)
 const RIPPLE_DUR = 400;     // impact ripple duration (ms)
 
+// Cached projection/graticule — rebuilt only when canvas dimensions change
+let cachedWidth = 0;
+let cachedHeight = 0;
+let cachedProjection: ReturnType<typeof geoNaturalEarth1> | null = null;
+let cachedGraticule: { type: 'MultiLineString'; coordinates: number[][][] } | null = null;
+
+function getCachedProjection(width: number, height: number) {
+  if (cachedProjection && width === cachedWidth && height === cachedHeight) {
+    return cachedProjection;
+  }
+  cachedWidth = width;
+  cachedHeight = height;
+  cachedProjection = geoNaturalEarth1()
+    .fitSize([width - 20, height - 20], { type: 'Sphere' } as any)
+    .translate([width / 2, height / 2]);
+  // Invalidate graticule since path generator changes
+  cachedGraticule = null;
+  return cachedProjection;
+}
+
+function getCachedGraticule() {
+  if (cachedGraticule) return cachedGraticule;
+  cachedGraticule = {
+    type: 'MultiLineString' as const,
+    coordinates: [
+      ...Array.from({ length: 13 }, (_, i) => {
+        const lng = -180 + i * 30;
+        return Array.from({ length: 181 }, (_, j) => [lng, -90 + j]);
+      }),
+      ...Array.from({ length: 7 }, (_, i) => {
+        const lat = -90 + i * 30;
+        return Array.from({ length: 361 }, (_, j) => [-180 + j, lat]);
+      }),
+    ],
+  };
+  return cachedGraticule;
+}
+
 // Module-level animation + audio state
 let currentSpeedMult = 10;     // mirrors prop for module-level functions
 let currentSoundEnabled = false;
@@ -457,7 +495,11 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
 
     // Need both locations and regions to demo
     if (!homeLocation || !targetLocation || allRegions.length === 0) return;
-    if (demoIntervalRef.current) return; // already running
+    // Clear stale interval (e.g. allRegions changed) before starting fresh
+    if (demoIntervalRef.current) {
+      clearInterval(demoIntervalRef.current);
+      demoIntervalRef.current = null;
+    }
 
     demoActive = true;
     const home: [number, number] = [homeLocation.lng, homeLocation.lat];
@@ -489,8 +531,14 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
         clearInterval(demoIntervalRef.current);
         demoIntervalRef.current = null;
       }
+      clearSoundTimeouts();
     };
   }, [hasRealResults, homeLocation, targetLocation, allRegions]);
+
+  // Clean up sound timeouts on unmount
+  useEffect(() => {
+    return () => clearSoundTimeouts();
+  }, []);
 
   // Fetch world topology once
   useEffect(() => {
@@ -580,13 +628,16 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
     const { width, height } = dimensions;
     const dpr = window.devicePixelRatio || 1;
 
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    ctx.scale(dpr, dpr);
+    // Only resize the canvas backing store when dimensions actually change
+    const targetW = width * dpr;
+    const targetH = height * dpr;
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW;
+      canvas.height = targetH;
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    const projection = geoNaturalEarth1()
-      .fitSize([width - 20, height - 20], { type: 'Sphere' } as any)
-      .translate([width / 2, height / 2]);
+    const projection = getCachedProjection(width, height);
 
     const proj = (c: [number, number]) => projection(c) as [number, number] | null;
 
@@ -612,22 +663,9 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
       ctx.stroke();
     }
 
-    // Graticule
-    const graticule = {
-      type: 'MultiLineString' as const,
-      coordinates: [
-        ...Array.from({ length: 13 }, (_, i) => {
-          const lng = -180 + i * 30;
-          return Array.from({ length: 181 }, (_, j) => [lng, -90 + j]);
-        }),
-        ...Array.from({ length: 7 }, (_, i) => {
-          const lat = -90 + i * 30;
-          return Array.from({ length: 361 }, (_, j) => [-180 + j, lat]);
-        }),
-      ],
-    };
+    // Graticule (cached)
     ctx.beginPath();
-    pathGen(graticule as any);
+    pathGen(getCachedGraticule() as any);
     ctx.strokeStyle = '#182240';
     ctx.lineWidth = 0.3;
     ctx.stroke();

@@ -137,7 +137,8 @@ export const COLO_TO_CITY: Record<string, string> = {
   'ATH': 'Athens, Greece',
   'BCN': 'Barcelona, Spain',
   'BEG': 'Belgrade, Serbia',
-  'TXL': 'Berlin, Germany',
+  'BER': 'Berlin, Germany',
+  'TXL': 'Berlin, Germany',  // legacy (Tegel closed 2020)
   'BOD': 'Bordeaux, France',
   'BTS': 'Bratislava, Slovakia',
   'BRU': 'Brussels, Belgium',
