@@ -333,7 +333,16 @@ async function testHttpPort(
 
     const socket = tls.connect(opts, () => {
       const now = Date.now();
-      tlsMs = tcpMs !== undefined ? now - startTime - tcpMs : now - startTime;
+      const totalConnectMs = now - startTime;
+      // If tcpMs wasn't captured by the connect event, estimate it
+      // In practice, on Cloudflare Workers TLS sockets, the connect event may not fire
+      // So we use the total connection time as tcpMs and set tlsMs to 0
+      if (tcpMs === undefined) {
+        tcpMs = totalConnectMs;
+        tlsMs = 0;
+      } else {
+        tlsMs = totalConnectMs - tcpMs;
+      }
 
       // Certificate pinning check
       if (request.pinnedPublicKey) {
@@ -496,7 +505,7 @@ async function testHttpPort(
         }
       }
 
-      done({
+      const result = {
         success: statusCode !== undefined && statusCode < 500,
         host: request.host,
         port: request.port,
@@ -512,7 +521,9 @@ async function testHttpPort(
         httpStatusText: statusText,
         httpVersion,
         ...(redirectCount > 0 && { redirectCount }),
-      });
+      };
+      console.log(`[testHttpPort] Result:`, { tcpMs, tlsMs, httpMs, totalMs: Date.now() - startTime });
+      done(result);
       socket.destroy();
     });
 
@@ -631,7 +642,7 @@ export default {
     }
 
     // Authenticate API requests (all /api/ routes except CORS preflight and /api/geo)
-    if (url.pathname.startsWith('/api/') && url.pathname !== '/api/geo' && url.pathname !== '/api/datacenters') {
+    if (url.pathname.startsWith('/api/') && url.pathname !== '/api/geo' && url.pathname !== '/api/geo-lookup' && url.pathname !== '/api/datacenters') {
       const secret = url.searchParams.get('secret');
       if (!env.API_SECRET || secret !== env.API_SECRET) {
         return new Response(
@@ -660,6 +671,73 @@ export default {
         headers: {
           'Content-Type': 'application/json',
           'Cache-Control': 'no-store',
+          ...corsHeaders,
+        },
+      });
+    }
+
+    // Geo lookup proxy endpoint - proxies geolocation API requests to avoid CORS issues
+    if (url.pathname === '/api/geo-lookup' && request.method === 'GET') {
+      const ip = url.searchParams.get('ip');
+      if (!ip) {
+        return new Response(JSON.stringify({ error: 'Missing ip parameter' }), {
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            ...corsHeaders,
+          },
+        });
+      }
+
+      // Try multiple geo providers in order
+      const geoProviders = [
+        {
+          url: `https://ipwho.is/${ip}`,
+          parse: (d: any) => d.success !== false && d.latitude && d.longitude
+            ? { lat: d.latitude, lng: d.longitude, city: d.city, country: d.country }
+            : null,
+        },
+        {
+          url: `https://freeipapi.com/api/json/${ip}`,
+          parse: (d: any) => d.latitude && d.longitude
+            ? { lat: d.latitude, lng: d.longitude, city: d.cityName, country: d.countryName }
+            : null,
+        },
+        {
+          url: `https://reallyfreegeoip.org/json/${encodeURIComponent(ip)}`,
+          parse: (d: any) => d.latitude && d.longitude
+            ? { lat: d.latitude, lng: d.longitude, city: d.city, country: d.country_name }
+            : null,
+        },
+      ];
+
+      for (const provider of geoProviders) {
+        try {
+          const response = await fetch(provider.url, { signal: AbortSignal.timeout(3000) });
+          if (response.ok) {
+            const data = await response.json();
+            const parsed = provider.parse(data);
+            if (parsed) {
+              return new Response(JSON.stringify(parsed), {
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Cache-Control': 'public, max-age=3600',
+                  ...corsHeaders,
+                },
+              });
+            }
+          }
+        } catch {
+          // Try next provider
+          continue;
+        }
+      }
+
+      // All providers failed
+      return new Response(JSON.stringify({ error: 'All geo providers failed' }), {
+        status: 503,
+        headers: {
+          'Content-Type': 'application/json',
           ...corsHeaders,
         },
       });

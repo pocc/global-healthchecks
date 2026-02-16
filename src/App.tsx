@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { COLO_TO_CITY } from './coloMapping';
 import WorldMap from './WorldMap';
+import BUILD_INFO from './buildInfo.json';
 
 interface HealthCheckRequest {
   host: string;
@@ -577,6 +578,9 @@ function App() {
   const [resolvedAsnName, setResolvedAsnName] = useState('');
   const [authNs, setAuthNs] = useState<string[]>([]);
   const [hostTouched, setHostTouched] = useState(hasUrlHostname);
+  const [isCloudflareDetected, setIsCloudflareDetected] = useState(false);
+  const [cloudflareIp, setCloudflareIp] = useState('');
+  const [manualIpOverride, setManualIpOverride] = useState('');
 
   // Detect whether the host input is a hostname (not an IP)
   const ipv4Re = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
@@ -681,6 +685,7 @@ function App() {
   const dnsCacheRef = useRef<Map<string, string>>(new Map()); // "host|type|provider" → resolved IP
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fetchAbortRef = useRef<AbortController | null>(null);
+  const ipInputRef = useRef<HTMLInputElement | null>(null);
   const [startTime, setStartTime] = useState<number | null>(null);
   const [homeLocation, setHomeLocation] = useState<{ lat: number; lng: number; city?: string; country?: string; colo?: string } | null>(null);
   const [targetLocation, setTargetLocation] = useState<{ lat: number; lng: number; city?: string; country?: string } | null>(null);
@@ -858,12 +863,16 @@ function App() {
             setResolvedAsn(`AS${cached.asn}`);
             setResolvedAsnName(cached.name || '');
             if (cached.asn === CLOUDFLARE_ASN) {
-              const resolvedInfo = isHostname ? ` Resolved: ${ip}.` : '';
-              setHostError(
-                `Target is on Cloudflare's network (AS${cached.asn}).${resolvedInfo} Connections will be blocked.`
+              setCloudflareIp(ip);
+              setDnsWarning(
+                `This worker will get Error 1014 connecting to ASN13335.`
               );
+              setIsCloudflareDetected(true);
+              setResolvedIp('');
+              setManualIpOverride('');
               setIsValidatingHost(false);
               lastAsnHostRef.current = hostKey;
+              setTimeout(() => ipInputRef.current?.focus(), 100);
               return;
             }
           } else {
@@ -885,12 +894,16 @@ function App() {
               if (asnNumber === CLOUDFLARE_ASN) {
                 setCachedAsn(ip, asnNumber);
                 if (isHostname) setCachedAsn(hostVal, asnNumber);
-                const resolvedInfo = isHostname ? ` Resolved: ${ip}.` : '';
-                setHostError(
-                  `Target is on Cloudflare's network (AS${asnNumber}).${resolvedInfo} Connections will be blocked.`
+                setCloudflareIp(ip);
+                setDnsWarning(
+                  `This worker will get Error 1014 connecting to ASN13335.`
                 );
+                setIsCloudflareDetected(true);
+                setResolvedIp('');
+                setManualIpOverride('');
                 setIsValidatingHost(false);
                 lastAsnHostRef.current = hostKey;
+                setTimeout(() => ipInputRef.current?.focus(), 100);
                 return;
               }
             }
@@ -932,40 +945,28 @@ function App() {
 
         lastAsnHostRef.current = hostKey;
 
-        // Geo lookup (always run if we have an IP)
-        const geoProviders = [
-          {
-            url: (ipAddr: string) => `https://ipwho.is/${ipAddr}`,
-            parse: (d: any) => d.success !== false && d.latitude && d.longitude
-              ? { lat: d.latitude, lng: d.longitude, city: d.city, country: d.country }
-              : null,
-          },
-          {
-            url: (ipAddr: string) => `https://freeipapi.com/api/json/${ipAddr}`,
-            parse: (d: any) => d.latitude && d.longitude
-              ? { lat: d.latitude, lng: d.longitude, city: d.cityName, country: d.countryName }
-              : null,
-          },
-          {
-            url: (ipAddr: string) => `https://reallyfreegeoip.org/json/${encodeURIComponent(ipAddr)}`,
-            parse: (d: any) => d.latitude && d.longitude
-              ? { lat: d.latitude, lng: d.longitude, city: d.city, country: d.country_name }
-              : null,
-          },
-        ];
+        // Geo lookup (always run if we have an IP) - use worker proxy to avoid CORS issues
+        const geoEndpoint = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+          ? `/api/geo-lookup?ip=${encodeURIComponent(ip)}`
+          : `${window.location.origin}/api/geo-lookup?ip=${encodeURIComponent(ip)}`;
+
+        console.log('[geo-lookup] Endpoint:', geoEndpoint);
         let geoResult: { lat: number; lng: number; city?: string; country?: string } | null = null;
-        for (const provider of geoProviders) {
-          try {
-            const geoRes = await fetch(provider.url(ip), { signal: abortController.signal });
-            if (!geoRes.ok) continue;
-            const geoData = await geoRes.json();
-            geoResult = provider.parse(geoData);
-            if (geoResult) break;
-          } catch {
-            // Try next provider
+        try {
+          const geoRes = await fetch(geoEndpoint, { signal: abortController.signal });
+          console.log('[geo-lookup] Response status:', geoRes.status);
+          if (geoRes.ok) {
+            geoResult = await geoRes.json() as { lat: number; lng: number; city?: string; country?: string };
+            console.log('[geo-lookup] Result:', geoResult);
+          } else {
+            const errorData = await geoRes.text();
+            console.log('[geo-lookup] Error response:', errorData);
           }
+        } catch (err) {
+          console.log('[geo-lookup] Fetch failed:', err);
         }
         if (geoResult && (geoResult.lat !== 0 || geoResult.lng !== 0)) {
+          console.log('[geo-lookup] Setting target location:', geoResult);
           setTargetLocation({
             lat: geoResult.lat,
             lng: geoResult.lng,
@@ -973,6 +974,7 @@ function App() {
             country: geoResult.country || undefined,
           });
         } else {
+          console.log('[geo-lookup] No valid geo result, clearing target location');
           setTargetLocation(null);
         }
       } catch (e) {
@@ -1030,6 +1032,9 @@ function App() {
   const handleHostChange = (value: string) => {
     setHost(value);
     setHostTouched(true);
+    setIsCloudflareDetected(false);
+    setCloudflareIp('');
+    setManualIpOverride('');
     // Auto-update SNI servername when hostname changes
     const trimmed = value.trim();
     if (trimmed && !ipv4Re.test(trimmed) && !ipv6Re.test(trimmed)) {
@@ -1062,7 +1067,7 @@ function App() {
   };
 
   const canRun = !isRunning && !isValidatingHost && !!host.trim() && !!port && !hostError && !portError && !dnsError
-    && (!isHostnameInput || resolvedIp !== '')
+    && (!isHostnameInput || (isCloudflareDetected ? manualIpOverride.trim() !== '' : resolvedIp !== ''))
     && dohProvider.startsWith('https://');
 
   const clearResults = () => {
@@ -1224,7 +1229,7 @@ function App() {
       }
 
       const checkRequest: HealthCheckRequest = {
-        host: resolvedIp || host.trim(),
+        host: (isCloudflareDetected && manualIpOverride) ? manualIpOverride.trim() : (resolvedIp || host.trim()),
         port: parseInt(port),
         timeout: parseInt(totalTimeout) || 10000,
         connectTimeout: parseInt(connectTimeout) || 5000,
@@ -1278,6 +1283,17 @@ function App() {
             httpVersion?: string;
             httpMs?: number;
           };
+
+          // Debug logging for L7 metrics
+          if (layer === 'l7' && index === 0) {
+            console.log(`[${regionCode}] API Response:`, {
+              tcpMs: data.tcpMs,
+              tlsHandshakeMs: data.tlsHandshakeMs,
+              httpMs: data.httpMs,
+              success: data.success,
+              latencyMs: data.latencyMs,
+            });
+          }
 
           setResults((prev) =>
             prev.map((r, i) =>
@@ -1646,8 +1662,34 @@ function App() {
               )}
               {dnsWarning && !hostError && !dnsError && (
                 <p className="mt-1 text-sm text-amber-400 flex items-center gap-1">
-                  <AlertTriangle className="w-4 h-4" />
-                  {dnsWarning}
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                  <span>
+                    {isCloudflareDetected ? (
+                      <>
+                        This hostname resolves to{' '}
+                        <a
+                          href="https://cloudflare.com/ips"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline hover:text-amber-300"
+                        >
+                          Cloudflare IP
+                        </a>
+                        {' '}{cloudflareIp}. This worker will get{' '}
+                        <a
+                          href="https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-1xxx-errors/error-1014/"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline hover:text-amber-300"
+                        >
+                          Error 1014
+                        </a>
+                        {' '}connecting to ASN13335.
+                      </>
+                    ) : (
+                      dnsWarning
+                    )}
+                  </span>
                 </p>
               )}
               {isValidatingHost && !hostError && !dnsError && (
@@ -1672,16 +1714,35 @@ function App() {
             {isHostnameInput && (
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1">
-                  IP Address
+                  IP Address {isCloudflareDetected && <span className="text-amber-400">*</span>}
                 </label>
                 <input
+                  ref={ipInputRef}
                   type="text"
-                  readOnly
-                  value={resolvedIp || (isValidatingHost ? '' : '')}
-                  placeholder={isValidatingHost ? 'Resolving...' : 'Auto-resolved from hostname'}
-                  className="w-full px-4 py-2 bg-slate-900/30 border border-slate-700 rounded-lg text-slate-400 placeholder-slate-600 cursor-not-allowed font-mono"
+                  readOnly={!isCloudflareDetected}
+                  value={isCloudflareDetected ? manualIpOverride : (resolvedIp || (isValidatingHost ? '' : ''))}
+                  onChange={(e) => isCloudflareDetected && setManualIpOverride(e.target.value)}
+                  placeholder={isCloudflareDetected ? 'Enter origin server IP address' : (isValidatingHost ? 'Resolving...' : 'Auto-resolved from hostname')}
+                  className={`w-full px-4 py-2 border rounded-lg font-mono ${
+                    isCloudflareDetected
+                      ? 'bg-slate-900/50 border-amber-500 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent'
+                      : 'bg-slate-900/30 border-slate-700 text-slate-400 placeholder-slate-600 cursor-not-allowed'
+                  }`}
                 />
-                {resolvedAsn && (
+                {isCloudflareDetected && (
+                  <p className="mt-1 text-sm text-amber-400">
+                    Please provide the origin server IP above. You can find the proxied DNS record target in your{' '}
+                    <a
+                      href={`https://dash.cloudflare.com/?to=/:account/:zone/dns/records?recordsSearchSearch=${encodeURIComponent(host.trim())}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline hover:text-amber-300"
+                    >
+                      Cloudflare DNS settings
+                    </a>.
+                  </p>
+                )}
+                {resolvedAsn && !isCloudflareDetected && (
                   <p className="mt-1 text-[11px] text-slate-500 font-mono truncate" title={resolvedAsnName ? `ASN: ${resolvedAsn.replace('AS', '')} (${resolvedAsnName})` : resolvedAsn}>
                     {resolvedAsnName ? `ASN: ${resolvedAsn.replace('AS', '')} (${resolvedAsnName})` : resolvedAsn}
                   </p>
@@ -2659,6 +2720,21 @@ function App() {
         )}
 
       </main>
+
+      {/* Build Info Footer */}
+      <footer className="border-t border-slate-700/50 bg-slate-900/30 py-2 px-4 text-center">
+        <p className="text-xs text-slate-500 font-mono">
+          Build: <span className="text-slate-400">{BUILD_INFO.gitHash}</span>
+          {' • '}
+          {new Date(BUILD_INFO.buildTime).toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZoneName: 'short'
+          })}
+        </p>
+      </footer>
 
     </div>
   );
