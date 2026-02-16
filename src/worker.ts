@@ -334,14 +334,17 @@ async function testHttpPort(
     const socket = tls.connect(opts, () => {
       const now = Date.now();
       const totalConnectMs = now - startTime;
+      console.log('[testHttpPort] TLS connected - tcpMs before:', tcpMs, 'totalConnectMs:', totalConnectMs);
       // If tcpMs wasn't captured by the connect event, estimate it
       // In practice, on Cloudflare Workers TLS sockets, the connect event may not fire
       // So we use the total connection time as tcpMs and set tlsMs to 0
       if (tcpMs === undefined) {
         tcpMs = totalConnectMs;
         tlsMs = 0;
+        console.log('[testHttpPort] Using fallback - tcpMs:', tcpMs, 'tlsMs:', tlsMs);
       } else {
         tlsMs = totalConnectMs - tcpMs;
+        console.log('[testHttpPort] Using connect event - tcpMs:', tcpMs, 'tlsMs:', tlsMs);
       }
 
       // Certificate pinning check
@@ -404,6 +407,7 @@ async function testHttpPort(
 
     socket.on('connect', () => {
       tcpMs = Date.now() - startTime;
+      console.log('[testHttpPort] connect event fired - tcpMs:', tcpMs);
     });
 
     let firstData = true;
