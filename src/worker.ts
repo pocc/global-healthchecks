@@ -858,11 +858,19 @@ export default {
 
         // Add Cloudflare metadata
         const colo = (request.cf as any)?.colo || undefined;
-        const enrichedResult: HealthCheckResult = {
+        const enrichedResult: HealthCheckResult & { _debug?: any } = {
           ...result,
           cfRay: request.headers.get('cf-ray') || undefined,
           colo,
           coloCity: getColoCity(colo),
+          _debug: {
+            httpEnabled: body.httpEnabled,
+            tlsEnabled: body.tlsEnabled,
+            testType: body.httpEnabled ? 'testHttpPort' : body.tlsEnabled ? 'testTlsPort' : 'testTcpPort',
+            rawTcpMs: result.tcpMs,
+            rawTlsMs: result.tlsHandshakeMs,
+            rawHttpMs: result.httpMs,
+          },
         };
 
         // Cache for /api/results
