@@ -837,11 +837,24 @@ export default {
           );
         }
 
+        console.log('[/api/check] Request:', {
+          host: body.host,
+          port: body.port,
+          httpEnabled: body.httpEnabled,
+          tlsEnabled: body.tlsEnabled,
+        });
+
         const result = body.httpEnabled
           ? await testHttpPort(body)
           : body.tlsEnabled
             ? await testTlsPort(body)
             : await testTcpPort(body);
+
+        console.log('[/api/check] Result:', {
+          tcpMs: result.tcpMs,
+          tlsHandshakeMs: result.tlsHandshakeMs,
+          httpMs: result.httpMs,
+        });
 
         // Add Cloudflare metadata
         const colo = (request.cf as any)?.colo || undefined;
