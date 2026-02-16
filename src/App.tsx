@@ -1286,13 +1286,7 @@ function App() {
 
           // Debug logging for L7 metrics
           if (layer === 'l7' && index === 0) {
-            console.log(`[${regionCode}] API Response:`, {
-              tcpMs: data.tcpMs,
-              tlsHandshakeMs: data.tlsHandshakeMs,
-              httpMs: data.httpMs,
-              success: data.success,
-              latencyMs: data.latencyMs,
-            });
+            console.log(`[${regionCode}] Full API Response:`, data);
           }
 
           setResults((prev) =>
