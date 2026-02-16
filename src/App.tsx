@@ -1258,7 +1258,7 @@ function App() {
 
       const regionalEndpoint = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
         ? `/api/check?secret=${apiSecret}`
-        : `https://${regionCode}.healthchecks.ross.gg/api/check?secret=${apiSecret}`;
+        : `${window.location.origin}/api/check?secret=${apiSecret}`;
 
       fetch(regionalEndpoint, {
         method: 'POST',
