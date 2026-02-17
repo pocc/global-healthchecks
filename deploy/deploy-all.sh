@@ -2,7 +2,7 @@
 # Deploy all 143 regional/targeted placement workers
 set -e
 
-cd /Users/rj/gd/code/global-healthchecks
+cd "$(dirname "$0")/.."
 
 # Extract all env names from wrangler.toml
 ENVS=$(grep '^\[env\.' wrangler.toml | sed 's/\[env\.\(.*\)\]/\1/' | sed 's/\..*$//' | sort -u)

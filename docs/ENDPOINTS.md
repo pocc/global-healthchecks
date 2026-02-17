@@ -126,14 +126,21 @@ Execute a single health check (TCP, TLS, or HTTP) from the Cloudflare edge.
 | `coloCity` | `string?` | Human-readable city name |
 | `cfRay` | `string?` | Cloudflare Ray ID |
 
-#### TLS Fields (when `tlsEnabled` or `httpEnabled`)
+#### TCP Fields (always present)
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `tcpMs` | `number` | TCP three-way handshake time in ms |
-| `tlsVersion` | `string` | Negotiated TLS version (e.g. `TLSv1.3`) |
-| `tlsCipher` | `string` | Negotiated cipher suite name |
-| `tlsHandshakeMs` | `number` | TLS handshake time in ms |
+
+#### TLS Fields (when `tlsEnabled` or `httpEnabled`)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tlsHandshakeMs` | `number` | TLS handshake time in ms (after TCP connect) |
+| `tlsVersion` | `string` | Negotiated TLS version (e.g. `TLSv1.3`) — TLS mode only |
+| `tlsCipher` | `string` | Negotiated cipher suite name — TLS mode only |
+
+> **Implementation note:** TLS checks use `cloudflare:sockets` with `secureTransport: 'starttls'`. The TCP socket is opened first, then upgraded to TLS via `socket.startTls()`. This gives clean per-phase timing. `node:tls` was removed in February 2026 due to unreliable event delivery in the Workers runtime.
 
 #### HTTP Fields (when `httpEnabled`)
 
@@ -142,7 +149,7 @@ Execute a single health check (TCP, TLS, or HTTP) from the Cloudflare edge.
 | `httpStatusCode` | `number` | HTTP response status code |
 | `httpStatusText` | `string` | HTTP status text (e.g. `OK`) |
 | `httpVersion` | `string` | HTTP version (e.g. `HTTP/1.1`) |
-| `httpMs` | `number` | Time to first byte after request sent |
+| `httpMs` | `number` | Time to first byte after request sent (TTFB) |
 | `redirectCount` | `number` | Number of redirects followed |
 | `redirectUrl` | `string` | Final redirect destination URL |
 

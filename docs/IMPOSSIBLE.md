@@ -4,6 +4,19 @@ Features that are not possible or have significant limitations due to the Cloudf
 
 ---
 
+## TLS/HTTP Implementation Note
+
+**As of February 16, 2026:** TLS and HTTP checks were rewritten to use `cloudflare:sockets` with `secureTransport: 'starttls'` instead of `node:tls`. The `node:tls` shim's `connect` and `secureConnect` events were unreliable in production — they often never fired, leaving all timing fields (`tcpMs`, `tlsHandshakeMs`, `httpMs`) as `undefined`.
+
+The STARTTLS approach uses explicit promise-based phases:
+1. `socket.opened` → tcpMs
+2. `socket.startTls().opened` → tlsHandshakeMs
+3. `reader.read()` after sending HTTP request → httpMs
+
+This completely replaces `node:tls`. The `import * as tls from 'node:tls'` is no longer present in `worker.ts`.
+
+---
+
 ## Networking
 
 ### IPv6 Connections
