@@ -834,7 +834,7 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
       ctx.arc(px, py, dotRadius, 0, 2 * Math.PI);
 
       if (!result || result.sent === 0) {
-        ctx.fillStyle = demoActive ? '#1e293b' : '#475569';
+        ctx.fillStyle = colors.dot;
       } else if (result.status === 'connected') {
         ctx.fillStyle = colors.dot;
       } else if (result.status === 'failed') {

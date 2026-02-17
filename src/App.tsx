@@ -1284,11 +1284,6 @@ function App() {
             httpMs?: number;
           };
 
-          // Debug logging for L7 metrics
-          if (layer === 'l7' && index === 0) {
-            console.log(`[${regionCode}] Full API Response:`, data);
-          }
-
           setResults((prev) =>
             prev.map((r, i) =>
               i === index
