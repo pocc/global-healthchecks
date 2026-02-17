@@ -1,11 +1,10 @@
 /**
  * Global Health Checks Worker
- * Uses Cloudflare Workers Sockets API to test TCP port connectivity
- * and node:tls for TLS handshake testing with version/cipher controls
+ * Uses Cloudflare Workers Sockets API (cloudflare:sockets) for TCP, TLS, and HTTP checks.
+ * STARTTLS approach gives per-phase timing: tcpMs, tlsHandshakeMs, httpMs.
  */
 
 import { connect } from 'cloudflare:sockets';
-import * as tls from 'node:tls';
 import { getColoCity, COLO_TO_CITY } from './coloMapping';
 
 /**
@@ -109,15 +108,18 @@ async function singleTcpAttempt(
       port: request.port,
       region: request.region,
       latencyMs,
+      tcpMs: latencyMs,
       timestamp: Date.now(),
     };
   } catch (error) {
+    const latencyMs = Date.now() - startTime;
     return {
       success: false,
       host: request.host,
       port: request.port,
       region: request.region,
-      latencyMs: Date.now() - startTime,
+      latencyMs,
+      tcpMs: latencyMs,
       error: error instanceof Error ? error.message : 'Unknown error',
       timestamp: Date.now(),
     };
@@ -147,8 +149,17 @@ async function testTcpPort(
 }
 
 /**
- * Test TLS handshake using node:tls compatibility layer.
- * Reports negotiated TLS version, cipher, and handshake timing.
+ * Test TLS handshake timing using two concurrent connections:
+ *
+ * Both connections open simultaneously to experience identical network conditions.
+ * The difference in their open times isolates the TLS handshake cost:
+ *
+ *   tcpMs        = time until TCP-only socket.opened  (secureTransport: 'off')
+ *   tcpPlusTlsMs = time until TLS socket.opened       (secureTransport: 'on')
+ *   tlsHandshakeMs = tcpPlusTlsMs - tcpMs
+ *
+ * Sequential connections would have more variance; concurrent connections share
+ * the same network path and routing, making the delta measurement reliable.
  */
 async function testTlsPort(
   request: HealthCheckRequest
@@ -156,130 +167,80 @@ async function testTlsPort(
   const startTime = Date.now();
   const timeout = request.timeout || 5000;
 
-  return new Promise((resolve) => {
-    let resolved = false;
-    let tcpMs: number | undefined;
-    let timer: ReturnType<typeof setTimeout> = undefined as any;
+  const timeoutReject = (ms: number, msg: string) =>
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error(msg)), ms));
 
-    const done = (result: HealthCheckResult) => {
-      if (resolved) return;
-      resolved = true;
-      clearTimeout(timer);
-      resolve(result);
-    };
+  // Open both connections simultaneously
+  let tcpSocket: ReturnType<typeof connect> | undefined;
+  let tlsSocket: ReturnType<typeof connect> | undefined;
 
-    const sni = request.tlsServername || request.host;
-    const opts: tls.ConnectionOptions = {
+  tcpSocket = connect(
+    { hostname: request.host, port: request.port },
+    { secureTransport: 'off', allowHalfOpen: false }
+  );
+  tlsSocket = connect(
+    { hostname: request.host, port: request.port },
+    { secureTransport: 'on', allowHalfOpen: false }
+  );
+
+  const tcpOpenedAt = Promise.race([tcpSocket.opened, timeoutReject(timeout, 'TCP connection timeout')])
+    .then(() => Date.now() - startTime);
+  const tlsOpenedAt = Promise.race([tlsSocket.opened, timeoutReject(timeout, 'TLS connection timeout')])
+    .then(() => Date.now() - startTime);
+
+  const [tcpResult, tlsResult] = await Promise.allSettled([tcpOpenedAt, tlsOpenedAt]);
+
+  tcpSocket.close().catch(() => {});
+  tlsSocket.close().catch(() => {});
+
+  if (tcpResult.status === 'rejected') {
+    return {
+      success: false,
       host: request.host,
       port: request.port,
-      ...(request.caBundlePem ? { rejectUnauthorized: true } : {}), // validate only if custom CA provided
-      servername: sni,           // SNI
+      region: request.region,
+      latencyMs: Date.now() - startTime,
+      tcpMs: Date.now() - startTime,
+      error: tcpResult.reason instanceof Error ? tcpResult.reason.message : 'TCP connection failed',
+      timestamp: Date.now(),
     };
+  }
 
-    if (request.minTlsVersion && VALID_TLS_VERSIONS.has(request.minTlsVersion)) {
-      opts.minVersion = request.minTlsVersion as tls.SecureVersion;
-    }
-    if (request.maxTlsVersion && VALID_TLS_VERSIONS.has(request.maxTlsVersion)) {
-      opts.maxVersion = request.maxTlsVersion as tls.SecureVersion;
-    }
-    if (request.ciphers) {
-      opts.ciphers = request.ciphers;
-    }
-    // mTLS: client certificate + key
-    if (request.clientCert) {
-      opts.cert = request.clientCert;
-    }
-    if (request.clientKey) {
-      opts.key = request.clientKey;
-    }
-    // Custom trust store
-    if (request.caBundlePem) {
-      opts.ca = request.caBundlePem;
-    }
-    const socket = tls.connect(opts, () => {
-      const totalMs = Date.now() - startTime;
-      const tlsHandshakeMs = tcpMs !== undefined ? totalMs - tcpMs : totalMs;
+  if (tlsResult.status === 'rejected') {
+    return {
+      success: false,
+      host: request.host,
+      port: request.port,
+      region: request.region,
+      latencyMs: Date.now() - startTime,
+      tcpMs: tcpResult.value,
+      error: tlsResult.reason instanceof Error ? tlsResult.reason.message : 'TLS connection failed',
+      timestamp: Date.now(),
+    };
+  }
 
-      // Certificate pinning check
-      if (request.pinnedPublicKey) {
-        try {
-          const cert = socket.getPeerCertificate();
-          if (cert?.fingerprint256) {
-            const serverPin = `sha256//${cert.fingerprint256.replace(/:/g, '')}`;
-            if (serverPin !== request.pinnedPublicKey) {
-              done({
-                success: false,
-                host: request.host,
-                port: request.port,
-                region: request.region,
-                latencyMs: totalMs,
-                error: `Certificate pin mismatch: expected ${request.pinnedPublicKey}, got ${serverPin}`,
-                timestamp: Date.now(),
-                tcpMs,
-                tlsVersion: socket.getProtocol() || undefined,
-                tlsCipher: socket.getCipher()?.name || undefined,
-                tlsHandshakeMs,
-              });
-              socket.destroy();
-              return;
-            }
-          }
-        } catch {
-          // pinning check failed -continue anyway
-        }
-      }
+  const tcpMs = tcpResult.value;
+  const tlsHandshakeMs = Math.max(0, tlsResult.value - tcpMs);
 
-      done({
-        success: true,
-        host: request.host,
-        port: request.port,
-        region: request.region,
-        latencyMs: totalMs,
-        timestamp: Date.now(),
-        tcpMs,
-        tlsVersion: socket.getProtocol() || undefined,
-        tlsCipher: socket.getCipher()?.name || undefined,
-        tlsHandshakeMs,
-      });
-      socket.destroy();
-    });
-
-    socket.on('connect', () => {
-      tcpMs = Date.now() - startTime;
-    });
-
-    socket.on('error', (error: Error) => {
-      done({
-        success: false,
-        host: request.host,
-        port: request.port,
-        region: request.region,
-        latencyMs: Date.now() - startTime,
-        error: error.message,
-        timestamp: Date.now(),
-      });
-      socket.destroy();
-    });
-
-    timer = setTimeout(() => {
-      done({
-        success: false,
-        host: request.host,
-        port: request.port,
-        region: request.region,
-        latencyMs: Date.now() - startTime,
-        error: 'Connection timeout',
-        timestamp: Date.now(),
-      });
-      socket.destroy();
-    }, timeout);
-  });
+  return {
+    success: true,
+    host: request.host,
+    port: request.port,
+    region: request.region,
+    latencyMs: tlsResult.value,
+    timestamp: Date.now(),
+    tcpMs,
+    tlsHandshakeMs,
+  };
 }
 
 /**
- * Test full HTTPS request over node:tls with per-phase timing.
- * Establishes TLS connection, sends HTTP request manually,
- * reports TCP, TLS, and HTTP TTFB timings separately.
+ * Test full HTTPS request using two connections for accurate per-phase timing.
+ *
+ * Connection 1: secureTransport: 'off'  → tcpMs (pure TCP)
+ * Connection 2: secureTransport: 'on'   → TCP+TLS time; tlsHandshakeMs = total - tcpMs;
+ *                                          then send HTTP request → httpMs (TTFB)
+ *
  * Optionally follows 3xx redirects up to maxRedirects.
  */
 async function testHttpPort(
@@ -289,281 +250,170 @@ async function testHttpPort(
 ): Promise<HealthCheckResult> {
   const startTime = Date.now();
   const timeout = request.timeout || 5000;
+  const sni = request.tlsServername || request.host;
+  let tcpSocket: ReturnType<typeof connect> | undefined;
+  let tlsSocket: ReturnType<typeof connect> | undefined;
 
-  return new Promise((resolve) => {
-    let resolved = false;
-    let tcpMs: number | undefined;
-    let tlsMs: number | undefined;
-    let httpSentAt: number | undefined;
-    let timer: ReturnType<typeof setTimeout> = undefined as any;
+  const withTimeout = <T>(p: Promise<T>, ms: number, msg: string): Promise<T> =>
+    Promise.race([p, new Promise<T>((_, reject) => setTimeout(() => reject(new Error(msg)), ms))]);
 
-    const done = (result: HealthCheckResult) => {
-      if (resolved) return;
-      resolved = true;
-      clearTimeout(timer);
-      resolve(result);
-    };
+  try {
+    // Open TCP-only and TLS connections simultaneously to minimize timing variance.
+    // TCP socket measures pure TCP RTT; TLS socket measures TCP+TLS combined.
+    // The delta gives tlsHandshakeMs.  The TLS socket is reused for the HTTP request.
+    tcpSocket = connect(
+      { hostname: request.host, port: request.port },
+      { secureTransport: 'off', allowHalfOpen: false }
+    );
+    tlsSocket = connect(
+      { hostname: request.host, port: request.port },
+      { secureTransport: 'on', allowHalfOpen: false }
+    );
 
-    const sni = request.tlsServername || request.host;
-    const opts: tls.ConnectionOptions = {
-      host: request.host,
-      port: request.port,
-      ...(request.caBundlePem ? { rejectUnauthorized: true } : {}), // validate only if custom CA provided
-      servername: sni,
-    };
+    const tcpOpenedAt = withTimeout(tcpSocket.opened, timeout, 'TCP connection timeout')
+      .then(() => Date.now() - startTime);
+    const tlsOpenedAt = withTimeout(tlsSocket.opened, timeout, 'TLS connection timeout')
+      .then(() => Date.now() - startTime);
 
-    if (request.minTlsVersion && VALID_TLS_VERSIONS.has(request.minTlsVersion)) {
-      opts.minVersion = request.minTlsVersion as tls.SecureVersion;
+    const [tcpResult, tlsResult] = await Promise.allSettled([tcpOpenedAt, tlsOpenedAt]);
+
+    // TCP socket is only needed for timing; close it now
+    tcpSocket.close().catch(() => {});
+    tcpSocket = undefined;
+
+    // Propagate TCP failure
+    if (tcpResult.status === 'rejected') {
+      tlsSocket.close().catch(() => {});
+      tlsSocket = undefined;
+      const err = tcpResult.reason instanceof Error ? tcpResult.reason.message : 'TCP connection failed';
+      return { success: false, host: request.host, port: request.port, region: request.region, latencyMs: Date.now() - startTime, error: err, timestamp: Date.now(), ...(redirectCount > 0 && { redirectCount }) };
     }
-    if (request.maxTlsVersion && VALID_TLS_VERSIONS.has(request.maxTlsVersion)) {
-      opts.maxVersion = request.maxTlsVersion as tls.SecureVersion;
-    }
-    if (request.ciphers) {
-      opts.ciphers = request.ciphers;
-    }
-    if (request.clientCert) {
-      opts.cert = request.clientCert;
-    }
-    if (request.clientKey) {
-      opts.key = request.clientKey;
-    }
-    if (request.caBundlePem) {
-      opts.ca = request.caBundlePem;
+    // Propagate TLS failure
+    if (tlsResult.status === 'rejected') {
+      tlsSocket.close().catch(() => {});
+      tlsSocket = undefined;
+      const err = tlsResult.reason instanceof Error ? tlsResult.reason.message : 'TLS connection failed';
+      return { success: false, host: request.host, port: request.port, region: request.region, latencyMs: Date.now() - startTime, tcpMs: tcpResult.value, error: err, timestamp: Date.now(), ...(redirectCount > 0 && { redirectCount }) };
     }
 
-    const socket = tls.connect(opts, () => {
-      const now = Date.now();
-      const totalConnectMs = now - startTime;
-      console.log('[testHttpPort] TLS connected - tcpMs before:', tcpMs, 'totalConnectMs:', totalConnectMs);
-      // If tcpMs wasn't captured by the connect event, estimate it
-      // In practice, on Cloudflare Workers TLS sockets, the connect event may not fire
-      // So we use the total connection time as tcpMs and set tlsMs to 0
-      if (tcpMs === undefined) {
-        tcpMs = totalConnectMs;
-        tlsMs = 0;
-        console.log('[testHttpPort] Using fallback - tcpMs:', tcpMs, 'tlsMs:', tlsMs);
-      } else {
-        tlsMs = totalConnectMs - tcpMs;
-        console.log('[testHttpPort] Using connect event - tcpMs:', tcpMs, 'tlsMs:', tlsMs);
+    const tcpMs = tcpResult.value;
+    const tlsHandshakeMs = Math.max(0, tlsResult.value - tcpMs);
+
+    // Phase 3: HTTP request
+    const ALLOWED_METHODS = ['GET', 'HEAD', 'POST', 'OPTIONS'];
+    const method = ALLOWED_METHODS.includes((request.httpMethod || 'GET').toUpperCase())
+      ? (request.httpMethod || 'GET').toUpperCase()
+      : 'GET';
+    const rawPath = request.httpPath || '/';
+    const path = /[\r\n]/.test(rawPath) ? '/' : rawPath;
+    const lines = [`${method} ${path} HTTP/1.1`, `Host: ${sni}`];
+    if (request.httpHeaders) {
+      const RESERVED = ['host', 'connection', 'content-length', 'transfer-encoding'];
+      for (const [key, value] of Object.entries(request.httpHeaders)) {
+        if (/[\r\n]/.test(key) || /[\r\n]/.test(value)) continue;
+        if (RESERVED.includes(key.toLowerCase())) continue;
+        lines.push(`${key}: ${value}`);
       }
+    }
+    lines.push('Connection: close', '', '');
 
-      // Certificate pinning check
-      if (request.pinnedPublicKey) {
-        try {
-          const cert = socket.getPeerCertificate();
-          if (cert?.fingerprint256) {
-            const serverPin = `sha256//${cert.fingerprint256.replace(/:/g, '')}`;
-            if (serverPin !== request.pinnedPublicKey) {
-              done({
-                success: false,
-                host: request.host,
-                port: request.port,
-                region: request.region,
-                latencyMs: now - startTime,
-                error: `Certificate pin mismatch: expected ${request.pinnedPublicKey}, got ${serverPin}`,
-                timestamp: Date.now(),
-                tcpMs,
-                tlsVersion: socket.getProtocol() || undefined,
-                tlsCipher: socket.getCipher()?.name || undefined,
-                tlsHandshakeMs: tlsMs,
-              });
-              socket.destroy();
-              return;
-            }
-          }
-        } catch {
-          // pinning check failed -continue anyway
-        }
-      }
+    const writer = tlsSocket.writable.getWriter();
+    const reader = tlsSocket.readable.getReader();
+    const httpSentAt = Date.now();
+    await writer.write(new TextEncoder().encode(lines.join('\r\n')));
+    writer.releaseLock();
 
-      // Build and send HTTP request -use SNI for Host header too
-      // Sanitize method: whitelist allowed methods
-      const ALLOWED_METHODS = ['GET', 'HEAD', 'POST', 'OPTIONS'];
-      const method = ALLOWED_METHODS.includes((request.httpMethod || 'GET').toUpperCase())
-        ? (request.httpMethod || 'GET').toUpperCase()
-        : 'GET';
-      // Sanitize path: reject CRLF injection
-      const rawPath = request.httpPath || '/';
-      const path = /[\r\n]/.test(rawPath) ? '/' : rawPath;
-      const lines = [
-        `${method} ${path} HTTP/1.1`,
-        `Host: ${sni}`,
-      ];
-      if (request.httpHeaders) {
-        const RESERVED_HEADERS = ['host', 'connection', 'content-length', 'transfer-encoding'];
-        for (const [key, value] of Object.entries(request.httpHeaders)) {
-          // Skip headers containing CRLF (header injection)
-          if (/[\r\n]/.test(key) || /[\r\n]/.test(value)) continue;
-          // Skip reserved headers that could break the request
-          if (RESERVED_HEADERS.includes(key.toLowerCase())) continue;
-          lines.push(`${key}: ${value}`);
-        }
-      }
-      lines.push('Connection: close', '', '');
+    // Read first chunk (status line + headers)
+    const { value: chunk } = await withTimeout(reader.read(), timeout, 'Response timeout');
+    reader.releaseLock();
+    const httpMs = Date.now() - httpSentAt;
+    await tlsSocket.close();
 
-      httpSentAt = Date.now();
-      socket.write(lines.join('\r\n'));
-    });
-
-    socket.on('connect', () => {
-      tcpMs = Date.now() - startTime;
-      console.log('[testHttpPort] connect event fired - tcpMs:', tcpMs);
-    });
-
-    let firstData = true;
-    socket.on('data', (chunk: Buffer) => {
-      if (!firstData) return;
-      firstData = false;
-
-      const httpMs = httpSentAt ? Date.now() - httpSentAt : undefined;
-      const responseStart = chunk.toString('utf-8', 0, Math.min(chunk.length, 2048));
-
-      // Parse "HTTP/1.1 200 OK"
-      const statusMatch = responseStart.match(/^(HTTP\/[\d.]+)\s+(\d{3})\s*(.*)/);
-      const httpVersion = statusMatch?.[1] || undefined;
-      const statusCode = statusMatch ? parseInt(statusMatch[2]) : undefined;
-      const statusText = statusMatch?.[3]?.trim() || undefined;
-
-      // Follow 3xx redirects if enabled
-      const maxRedir = request.maxRedirects ?? 5;
-      if (request.followRedirects && statusCode && statusCode >= 300 && statusCode < 400 && redirectCount < maxRedir) {
-        const locationMatch = responseStart.match(/\r\nLocation:\s*(\S+)/i);
-        if (locationMatch) {
-          socket.destroy();
-          const location = locationMatch[1];
-          try {
-            // Resolve Location (may be relative or absolute)
-            const base = `https://${sni}:${request.port}${request.httpPath || '/'}`;
-            const redirectUrl = new URL(location, base);
-            const redirectHost = redirectUrl.hostname;
-            const redirectPort = parseInt(redirectUrl.port) || (redirectUrl.protocol === 'https:' ? 443 : 80);
-            const redirectPath = redirectUrl.pathname + redirectUrl.search;
-
-            // SSRF protection: validate redirect target
-            const redirectBlocked = isBlockedHost(redirectHost);
-            if (redirectBlocked) {
-              done({
-                success: false,
-                host: request.host,
-                port: request.port,
-                region: request.region,
-                latencyMs: Date.now() - startTime,
-                error: `Redirect to blocked host: ${redirectBlocked}`,
-                timestamp: Date.now(),
-                tcpMs,
-                redirectCount: redirectCount + 1,
-                redirectUrl: redirectUrl.href,
-              });
-              return;
-            }
-
-            // Redirect loop detection
-            if (visitedUrls.has(redirectUrl.href)) {
-              done({
-                success: false,
-                host: request.host,
-                port: request.port,
-                region: request.region,
-                latencyMs: Date.now() - startTime,
-                error: `Redirect loop detected: ${redirectUrl.href}`,
-                timestamp: Date.now(),
-                tcpMs,
-                redirectCount: redirectCount + 1,
-                redirectUrl: redirectUrl.href,
-              });
-              return;
-            }
-            visitedUrls.add(redirectUrl.href);
-
-            testHttpPort({
-              ...request,
-              host: redirectHost,
-              port: redirectPort,
-              httpPath: redirectPath,
-              tlsServername: redirectHost,
-            }, redirectCount + 1, visitedUrls).then((result) => {
-              done({
-                ...result,
-                // Preserve original request's host/port for reporting
-                host: request.host,
-                port: request.port,
-                redirectCount: redirectCount + 1,
-                redirectUrl: redirectUrl.href,
-              });
-            });
-          } catch {
-            // Bad Location URL -report as-is
-            done({
-              success: false,
-              host: request.host,
-              port: request.port,
-              region: request.region,
-              latencyMs: Date.now() - startTime,
-              error: `Bad redirect URL: ${location}`,
-              timestamp: Date.now(),
-              tcpMs,
-              redirectCount,
-            });
-          }
-          return;
-        }
-      }
-
-      const result = {
-        success: statusCode !== undefined && statusCode < 500,
+    if (!chunk) {
+      return {
+        success: false,
         host: request.host,
         port: request.port,
         region: request.region,
         latencyMs: Date.now() - startTime,
+        error: 'Empty response',
         timestamp: Date.now(),
         tcpMs,
-        tlsVersion: socket.getProtocol() || undefined,
-        tlsCipher: socket.getCipher()?.name || undefined,
-        tlsHandshakeMs: tlsMs,
-        httpMs,
-        httpStatusCode: statusCode,
-        httpStatusText: statusText,
-        httpVersion,
+        tlsHandshakeMs,
         ...(redirectCount > 0 && { redirectCount }),
       };
-      console.log(`[testHttpPort] Result:`, { tcpMs, tlsMs, httpMs, totalMs: Date.now() - startTime });
-      done(result);
-      socket.destroy();
-    });
+    }
 
-    socket.on('error', (error: Error) => {
-      done({
-        success: false,
-        host: request.host,
-        port: request.port,
-        region: request.region,
-        latencyMs: Date.now() - startTime,
-        error: error.message,
-        timestamp: Date.now(),
-        tcpMs,
-        ...(redirectCount > 0 && { redirectCount }),
-      });
-      socket.destroy();
-    });
+    const responseStart = new TextDecoder().decode(chunk).slice(0, 2048);
+    const statusMatch = responseStart.match(/^(HTTP\/[\d.]+)\s+(\d{3})\s*(.*)/);
+    const httpVersion = statusMatch?.[1];
+    const statusCode = statusMatch ? parseInt(statusMatch[2]) : undefined;
+    const statusText = statusMatch?.[3]?.trim();
 
-    timer = setTimeout(() => {
-      done({
-        success: false,
-        host: request.host,
-        port: request.port,
-        region: request.region,
-        latencyMs: Date.now() - startTime,
-        error: 'Connection timeout',
-        timestamp: Date.now(),
-        tcpMs,
-        ...(redirectCount > 0 && { redirectCount }),
-      });
-      socket.destroy();
-    }, timeout);
-  });
+    // Follow 3xx redirects
+    const maxRedir = request.maxRedirects ?? 5;
+    if (request.followRedirects && statusCode && statusCode >= 300 && statusCode < 400 && redirectCount < maxRedir) {
+      const locationMatch = responseStart.match(/\r\nLocation:\s*(\S+)/i);
+      if (locationMatch) {
+        const location = locationMatch[1];
+        try {
+          const base = `https://${sni}:${request.port}${request.httpPath || '/'}`;
+          const redirectUrl = new URL(location, base);
+          const redirectHost = redirectUrl.hostname;
+          const redirectPort = parseInt(redirectUrl.port) || (redirectUrl.protocol === 'https:' ? 443 : 80);
+          const redirectPath = redirectUrl.pathname + redirectUrl.search;
+
+          const redirectBlocked = isBlockedHost(redirectHost);
+          if (redirectBlocked) {
+            return { success: false, host: request.host, port: request.port, region: request.region, latencyMs: Date.now() - startTime, error: `Redirect to blocked host: ${redirectBlocked}`, timestamp: Date.now(), tcpMs, redirectCount: redirectCount + 1, redirectUrl: redirectUrl.href };
+          }
+          if (visitedUrls.has(redirectUrl.href)) {
+            return { success: false, host: request.host, port: request.port, region: request.region, latencyMs: Date.now() - startTime, error: `Redirect loop detected: ${redirectUrl.href}`, timestamp: Date.now(), tcpMs, redirectCount: redirectCount + 1, redirectUrl: redirectUrl.href };
+          }
+          visitedUrls.add(redirectUrl.href);
+
+          const result = await testHttpPort(
+            { ...request, host: redirectHost, port: redirectPort, httpPath: redirectPath, tlsServername: redirectHost },
+            redirectCount + 1, visitedUrls
+          );
+          return { ...result, host: request.host, port: request.port, redirectCount: redirectCount + 1, redirectUrl: redirectUrl.href };
+        } catch {
+          return { success: false, host: request.host, port: request.port, region: request.region, latencyMs: Date.now() - startTime, error: `Bad redirect URL: ${location}`, timestamp: Date.now(), tcpMs, redirectCount };
+        }
+      }
+    }
+
+    return {
+      success: statusCode !== undefined && statusCode < 500,
+      host: request.host,
+      port: request.port,
+      region: request.region,
+      latencyMs: Date.now() - startTime,
+      timestamp: Date.now(),
+      tcpMs,
+      tlsHandshakeMs,
+      httpMs,
+      httpStatusCode: statusCode,
+      httpStatusText: statusText,
+      httpVersion,
+      ...(redirectCount > 0 && { redirectCount }),
+    };
+  } catch (error) {
+    try { tcpSocket?.close(); } catch { /* ignore */ }
+    try { tlsSocket?.close(); } catch { /* ignore */ }
+    return {
+      success: false,
+      host: request.host,
+      port: request.port,
+      region: request.region,
+      latencyMs: Date.now() - startTime,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: Date.now(),
+      ...(redirectCount > 0 && { redirectCount }),
+    };
+  }
 }
 
-const VALID_TLS_VERSIONS = new Set(['TLSv1', 'TLSv1.1', 'TLSv1.2', 'TLSv1.3']);
 
 /**
  * SSRF protection: block connections to private/internal/link-local addresses.
@@ -837,24 +687,14 @@ export default {
           );
         }
 
-        console.log('[/api/check] Request:', {
-          host: body.host,
-          port: body.port,
-          httpEnabled: body.httpEnabled,
-          tlsEnabled: body.tlsEnabled,
-        });
-
         const result = body.httpEnabled
           ? await testHttpPort(body)
           : body.tlsEnabled
             ? await testTlsPort(body)
             : await testTcpPort(body);
 
-        console.log('[/api/check] Result:', {
-          tcpMs: result.tcpMs,
-          tlsHandshakeMs: result.tlsHandshakeMs,
-          httpMs: result.httpMs,
-        });
+        const mode = body.httpEnabled ? 'http' : body.tlsEnabled ? 'tls' : 'tcp';
+        console.log(`[check] ${mode} ${body.host}:${body.port} → ${result.success ? 'ok' : 'fail'} ${result.latencyMs}ms${result.error ? ' error=' + result.error : ''}${result.tcpMs !== undefined ? ' tcp=' + result.tcpMs : ''}${result.tlsHandshakeMs !== undefined ? ' tls=' + result.tlsHandshakeMs : ''}${result.httpMs !== undefined ? ' http=' + result.httpMs : ''}`);
 
         // Add Cloudflare metadata
         const colo = (request.cf as any)?.colo || undefined;
@@ -985,7 +825,25 @@ export default {
 
     // Serve static assets (React app) from the ASSETS binding
     try {
-      return await env.ASSETS.fetch(request);
+      const assetResponse = await env.ASSETS.fetch(request);
+      // Override any platform-injected CSP (e.g. Cloudflare's report-only connect-src 'none')
+      // with one that allows the app's legitimate outbound connections.
+      const contentType = assetResponse.headers.get('Content-Type') ?? '';
+      if (contentType.includes('text/html')) {
+        const cspConnectSrc = [
+          "'self'",
+          'https://*.healthchecks.ross.gg',
+          'https://cdn.jsdelivr.net',
+          'https://dns.google',
+          'https://cloudflare-dns.com',
+          'https://one.one.one.one',
+        ].join(' ');
+        const headers = new Headers(assetResponse.headers);
+        headers.set('Content-Security-Policy', `connect-src ${cspConnectSrc}`);
+        headers.delete('Content-Security-Policy-Report-Only');
+        return new Response(assetResponse.body, { status: assetResponse.status, headers });
+      }
+      return assetResponse;
     } catch {
       // Fallback if assets aren't available
       return new Response('Global Health Checks Worker - Use /api/check or /api/batch-check', {

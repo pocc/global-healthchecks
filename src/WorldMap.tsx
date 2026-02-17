@@ -4,6 +4,9 @@ import { feature } from 'topojson-client';
 import type { FeatureCollection } from 'geojson';
 import { REGION_COORDINATES } from './regionCoordinates';
 
+// Enable verbose animation debugging by adding ?debug to the URL
+const DEBUG = new URLSearchParams(location.search).has('debug');
+
 interface TestResult {
   region: string;
   regionName: string;
@@ -563,6 +566,19 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
       ? [targetLocation.lng, targetLocation.lat]
       : null;
 
+    // Detect test reset: new test started (or layer/host changed) and results were cleared.
+    // prevSentRef may hold stale counts from a previous run — clear everything for a clean slate.
+    if (results.length > 0 && results.every(r => r.sent === 0)) {
+      prevSentRef.current.clear();
+      roundStartRef.current = 0;
+      lastAnimEndTime = 0;
+      packets.length = 0;
+      trails.length = 0;
+      ripples.length = 0;
+      clearSoundTimeouts();
+      return;
+    }
+
     // Check if any new results arrived
     let hasNew = false;
     results.forEach(r => {
@@ -591,17 +607,28 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
 
     // Track the longest animation end time for this batch
     let maxEnd = startAt;
+    let spawnCount = 0;
     results.forEach(r => {
       const prev = prevSentRef.current.get(r.region) || 0;
       if (r.sent > prev) {
-        const lat = r.latencies.length > 0 ? r.latencies[r.latencies.length - 1] : 100;
+        // For L7 (HTTP) checks, compress animation duration via sqrt(TTFB)*10
+        // so high HTTP latencies (~500-1300ms) produce visible animations.
+        // For L4 (TCP) checks, use raw latency directly.
+        const lat = r.httpMs != null
+          ? Math.sqrt(r.httpMs) * 10
+          : r.latencies.length > 0 ? r.latencies[r.latencies.length - 1] : 100;
         const animDur = lat * currentSpeedMult;
         const pktEnd = startAt + animDur;
         if (pktEnd > maxEnd) maxEnd = pktEnd;
         spawnPacket(r.region, lat, home, target, r.status === 'failed', startAt);
         prevSentRef.current.set(r.region, r.sent);
+        spawnCount++;
       }
     });
+    if (DEBUG) console.log('[WorldMap] spawnCount:', spawnCount, 'packets.length:', packets.length,
+      'home:', home, 'target:', target, 'startAt:', startAt, 'now:', Date.now(),
+      'demoActive:', demoActive, 'speedMult:', currentSpeedMult,
+      'sampleHttpMs:', results.find(r => r.httpMs != null)?.httpMs);
     // If animation duration > 5s, save end time so next batch waits
     if (maxEnd - startAt > 5000) {
       lastAnimEndTime = maxEnd;
@@ -1004,6 +1031,8 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
     /* ── Continue animation loop if there are active elements (or demo is running) ── */
     if (packets.length || trails.length || ripples.length || demoActive) {
       animFrameRef.current = requestAnimationFrame(draw);
+    } else {
+      if (DEBUG) console.log('[WorldMap] rAF loop stopped: packets=', packets.length, 'trails=', trails.length, 'ripples=', ripples.length, 'demoActive=', demoActive);
     }
   }, [land, dimensions, results, allRegions, homeLocation, targetLocation, speedMultiplier, demoTick]);
 

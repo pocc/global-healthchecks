@@ -567,7 +567,7 @@ function setCachedAsn(ip: string, asn: string, name?: string): void {
 function App() {
   const params = new URLSearchParams(window.location.search);
   const hasUrlHostname = !!params.get('hostname');
-  const [host, setHost] = useState(params.get('hostname') || 'globo.com');
+  const [host, setHost] = useState(params.get('hostname') || 'google.com.br');
   const [port, setPort] = useState(params.get('port') || '443');
   const [hostError, setHostError] = useState('');
   const [portError, setPortError] = useState('');
@@ -1093,7 +1093,7 @@ function App() {
       if (value !== def) p.set(key, value);
       else p.delete(key);
     };
-    set('hostname', host.trim(), 'globo.com');
+    set('hostname', host.trim(), 'google.com.br');
     set('port', port, '443');
     set('layer', layer, 'l4');
     // L4 TCP controls
@@ -1229,7 +1229,7 @@ function App() {
       }
 
       const checkRequest: HealthCheckRequest = {
-        host: (isCloudflareDetected && manualIpOverride) ? manualIpOverride.trim() : (resolvedIp || host.trim()),
+        host: (isCloudflareDetected && manualIpOverride) ? manualIpOverride.trim() : host.trim(),
         port: parseInt(port),
         timeout: parseInt(totalTimeout) || 10000,
         connectTimeout: parseInt(connectTimeout) || 5000,
@@ -1239,6 +1239,9 @@ function App() {
         region: regionCode,
         ...(layer === 'l7' && {
           tlsEnabled: true,
+          // When using a CF-bypass IP override, pass the original hostname as tlsServername
+          // so the worker can use it for the HTTP Host header and SNI (where supported).
+          ...(isCloudflareDetected && manualIpOverride && !tlsServername && { tlsServername: host.trim() }),
           ...(tlsServername && { tlsServername }),
           ...(minTlsVersion && { minTlsVersion }),
           ...(maxTlsVersion && { maxTlsVersion }),
@@ -1284,26 +1287,15 @@ function App() {
             httpMs?: number;
           };
 
+
           setResults((prev) =>
             prev.map((r, i) =>
               i === index
                 ? {
                     ...r,
                     sent: r.sent + 1,
-                    status: (() => {
-                      if (!data.success) return 'failed' as const;
-                      if (layer === 'l7' && expectedStatus.trim() && data.httpStatusCode !== undefined) {
-                        return String(data.httpStatusCode) === expectedStatus.trim() ? 'connected' as const : 'failed' as const;
-                      }
-                      return 'connected' as const;
-                    })(),
-                    received: (() => {
-                      if (!data.success) return r.received;
-                      if (layer === 'l7' && expectedStatus.trim() && data.httpStatusCode !== undefined) {
-                        return String(data.httpStatusCode) === expectedStatus.trim() ? r.received + 1 : r.received;
-                      }
-                      return r.received + 1;
-                    })(),
+                    status: data.success ? 'connected' as const : 'failed' as const,
+                    received: data.success ? r.received + 1 : r.received,
                     latencies: data.latencyMs !== undefined ? [...r.latencies, data.latencyMs] : r.latencies,
                     pingHistory: [...r.pingHistory, { ms: data.success && data.latencyMs !== undefined ? data.latencyMs : null, ts: Date.now() }],
                     lastError: data.error,
