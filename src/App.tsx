@@ -567,7 +567,7 @@ function setCachedAsn(ip: string, asn: string, name?: string): void {
 function App() {
   const params = new URLSearchParams(window.location.search);
   const hasUrlHostname = !!params.get('hostname');
-  const [host, setHost] = useState(params.get('hostname') || 'google.com.br');
+  const [host, setHost] = useState(params.get('hostname') || 'globo.com');
   const [port, setPort] = useState(params.get('port') || '443');
   const [hostError, setHostError] = useState('');
   const [portError, setPortError] = useState('');
@@ -1093,7 +1093,7 @@ function App() {
       if (value !== def) p.set(key, value);
       else p.delete(key);
     };
-    set('hostname', host.trim(), 'google.com.br');
+    set('hostname', host.trim(), 'globo.com');
     set('port', port, '443');
     set('layer', layer, 'l4');
     // L4 TCP controls
