@@ -65,6 +65,7 @@ interface HealthCheckResult {
   colo?: string;
   coloCity?: string;
   cfPlacement?: string;
+  clientTcpRtt?: number; // TCP RTT from client to Cloudflare edge (ms), from request.cf
   tcpMs?: number;
   tlsVersion?: string;
   tlsCipher?: string;
@@ -697,12 +698,14 @@ export default {
         console.log(`[check] ${mode} ${body.host}:${body.port} → ${result.success ? 'ok' : 'fail'} ${result.latencyMs}ms${result.error ? ' error=' + result.error : ''}${result.tcpMs !== undefined ? ' tcp=' + result.tcpMs : ''}${result.tlsHandshakeMs !== undefined ? ' tls=' + result.tlsHandshakeMs : ''}${result.httpMs !== undefined ? ' http=' + result.httpMs : ''}`);
 
         // Add Cloudflare metadata
-        const colo = (request.cf as any)?.colo || undefined;
+        const cf = request.cf as any;
+        const colo = cf?.colo || undefined;
         const enrichedResult: HealthCheckResult & { _debug?: any } = {
           ...result,
           cfRay: request.headers.get('cf-ray') || undefined,
           colo,
           coloCity: getColoCity(colo),
+          clientTcpRtt: cf?.clientTcpRtt !== undefined ? Math.round(cf.clientTcpRtt) : undefined,
           _debug: {
             httpEnabled: body.httpEnabled,
             tlsEnabled: body.tlsEnabled,

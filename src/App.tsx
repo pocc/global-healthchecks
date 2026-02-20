@@ -61,6 +61,8 @@ interface TestResult {
   colo?: string;
   coloCity?: string;
   cfPlacement?: string;
+  clientTcpRtt?: number; // TCP RTT from client to Cloudflare edge, from request.cf
+  lastMs?: number; // most recent latencyMs (edge → origin)
   tcpMs?: number;
   tlsVersion?: string;
   tlsCipher?: string;
@@ -594,6 +596,7 @@ function App() {
     ...AZURE_PLACEMENT.map((r) => r.code)
   ], []);
   const [results, setResults] = useState<TestResult[]>([]);
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [isRunning, setIsRunning] = useState(false);
 
   // TCP Only / Full Stack mode
@@ -1277,6 +1280,7 @@ function App() {
             error?: string;
             colo?: string;
             coloCity?: string;
+            clientTcpRtt?: number;
             tcpMs?: number;
             tlsVersion?: string;
             tlsCipher?: string;
@@ -1302,6 +1306,8 @@ function App() {
                     colo: data.colo || r.colo,
                     coloCity: data.coloCity || r.coloCity,
                     cfPlacement: cfPlacement || r.cfPlacement,
+                    clientTcpRtt: data.clientTcpRtt ?? r.clientTcpRtt,
+                    lastMs: data.latencyMs !== undefined ? data.latencyMs : r.lastMs,
                     tcpMs: data.tcpMs ?? r.tcpMs,
                     tlsVersion: data.tlsVersion || r.tlsVersion,
                     tlsCipher: data.tlsCipher || r.tlsCipher,
@@ -2564,18 +2570,10 @@ function App() {
                   <tr>
                     <th className="px-3 py-1.5 text-left font-medium text-slate-400 uppercase tracking-wider">Region</th>
                     <th className="px-3 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-16">Loss%</th>
-                    <th className="px-3 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-16">Avg</th>
-                    <th className="px-3 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-16">Best</th>
-                    <th className="px-3 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-16">Worst</th>
-                    <th className="px-3 py-1.5 text-left font-medium text-slate-400 uppercase tracking-wider" style={{ width: 240 }} title="The data center that first received your request (nearest to your location)">Ingress <svg className="w-3 h-3 inline-block text-slate-500 -mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></th>
-                    <th className="px-3 py-1.5 text-left font-medium text-slate-400 uppercase tracking-wider" style={{ width: 240 }} title="Where the Worker actually executed and ran the TCP test (derived from cf-placement header)">Egress <svg className="w-3 h-3 inline-block text-slate-500 -mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></th>
-                    {layer === 'l7' && (
-                      <>
-                        <th className="px-3 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-16">TCP ms</th>
-                        <th className="px-3 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-16">TLS ms</th>
-                        <th className="px-3 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-16">TTFB</th>
-                      </>
-                    )}
+                    <th className="px-3 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-20" title="TCP round-trip time from your browser to the Cloudflare edge node, as measured by Cloudflare (request.cf.clientTcpRtt)">Client RTT <svg className="w-3 h-3 inline-block text-slate-500 -mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></th>
+                    <th className="px-3 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-20" title="Most recent latency from the Cloudflare edge to the origin server. Click the row chevron to see avg / best / worst and phase breakdown.">Origin <svg className="w-3 h-3 inline-block text-slate-500 -mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></th>
+                    <th className="px-3 py-1.5 text-left font-medium text-slate-400 uppercase tracking-wider" style={{ width: 200 }} title="The data center that first received your request (nearest to your location)">Ingress <svg className="w-3 h-3 inline-block text-slate-500 -mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></th>
+                    <th className="px-3 py-1.5 text-left font-medium text-slate-400 uppercase tracking-wider" style={{ width: 200 }} title="Where the Worker actually executed and ran the TCP test (derived from cf-placement header)">Egress <svg className="w-3 h-3 inline-block text-slate-500 -mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></th>
                     <th className="px-3 py-1.5 text-left font-medium text-slate-400 uppercase tracking-wider w-[104px]">History</th>
                   </tr>
                 </thead>
@@ -2620,76 +2618,127 @@ function App() {
                     return (<Fragment key={result.region}>
                     {grp && (
                       <tr>
-                        <td colSpan={layer === 'l4' ? 8 : 11} className={`px-3 py-1.5 text-xs font-semibold uppercase tracking-wider border-l-2 ${grp.color}`}>
+                        <td colSpan={7} className={`px-3 py-1.5 text-xs font-semibold uppercase tracking-wider border-l-2 ${grp.color}`}>
                           {grp.label}
                         </td>
                       </tr>
                     )}
-                    <tr
-                      className={`hover:bg-slate-700/30 ${rowAccent} ${stripeBg}`}
-                    >
-                      <td className="px-3 py-1.5 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
-                          {getStatusIcon(result.status)}
-                          <span className="font-sans text-white">
-                            {result.regionName}
-                          </span>
-                        </div>
-                      </td>
-                      <td className={`px-3 py-1.5 text-right ${loss === 0 ? 'text-green-400' : loss < 50 ? 'text-yellow-400' : 'text-red-400'}`}>
-                        {result.sent > 0 ? `${loss.toFixed(0)}%` : '-'}
-                      </td>
-                      <td className="px-3 py-1.5 text-right text-slate-300">
-                        {avg !== null ? avg : '-'}
-                      </td>
-                      <td className="px-3 py-1.5 text-right text-green-400">
-                        {best !== null ? best : '-'}
-                      </td>
-                      <td className="px-3 py-1.5 text-right text-red-400">
-                        {worst !== null ? worst : '-'}
-                      </td>
-                      <td className="px-3 py-1.5 whitespace-nowrap text-slate-300 overflow-hidden text-ellipsis" style={{ maxWidth: 240 }}>
-                        {result.colo
-                          ? <><span>{result.colo}</span><span className="text-slate-500"> ({result.coloCity || '?'})</span></>
-                          : '-'}
-                      </td>
-                      <td className="px-3 py-1.5 whitespace-nowrap text-slate-300 overflow-hidden text-ellipsis" style={{ maxWidth: 240 }}>
-                        {egress.colo
-                          ? <><span>{egress.colo}</span><span className="text-slate-500"> ({egress.city || '?'})</span></>
-                          : egress.raw
-                            ? <span className="bg-red-500/20 border border-red-500/40 text-red-300 text-xs px-2 py-0.5 rounded-full">{egress.raw}</span>
-                            : '-'}
-                      </td>
-                      {layer === 'l7' && (
-                        <>
-                          <td className="px-3 py-1.5 text-right text-slate-300">
-                            {result.tcpMs !== undefined ? result.tcpMs : '-'}
-                          </td>
-                          <td className="px-3 py-1.5 text-right text-slate-300">
-                            {result.tlsHandshakeMs !== undefined ? result.tlsHandshakeMs : '-'}
-                          </td>
-                          <td className="px-3 py-1.5 text-right text-slate-300">
-                            {result.httpMs !== undefined ? result.httpMs : '-'}
-                          </td>
-                        </>
-                      )}
-                      <td className="px-3 py-1.5">
-                        {result.pingHistory.length > 0 && (
-                          <div className="flex items-end gap-px overflow-hidden" style={{ height: 14, width: 104 }}>
-                            {result.pingHistory.slice(-50).map((ping, pi) => {
-                              const ts = new Date(ping.ts).toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
-                              if (ping.ms === null) {
-                                return <div key={pi} title="FAIL" style={{ width: 2, height: 14, backgroundColor: '#ef4444', flexShrink: 0, cursor: 'pointer' }} onClick={() => navigator.clipboard.writeText(`FAIL @ ${ts}`)} />;
-                              }
-                              const color = ping.ms < 100 ? '#22c55e' : ping.ms < 300 ? '#eab308' : '#f97316';
-                              const maxMs = worst || 500;
-                              const h = Math.max(3, Math.round((ping.ms / maxMs) * 14));
-                              return <div key={pi} title={`${ping.ms}ms`} style={{ width: 2, height: Math.min(h, 14), backgroundColor: color, flexShrink: 0, cursor: 'pointer' }} onClick={() => navigator.clipboard.writeText(`${ping.ms}ms @ ${ts}`)} />;
-                            })}
+                    {(() => {
+                      const isExpanded = expandedRows.has(result.region);
+                      const toggleExpand = () => setExpandedRows(prev => {
+                        const next = new Set(prev);
+                        if (next.has(result.region)) next.delete(result.region);
+                        else next.add(result.region);
+                        return next;
+                      });
+                      const rttColor = result.clientTcpRtt === undefined ? 'text-slate-500'
+                        : result.clientTcpRtt < 20 ? 'text-green-300'
+                        : result.clientTcpRtt < 50 ? 'text-green-400'
+                        : result.clientTcpRtt < 100 ? 'text-yellow-400'
+                        : result.clientTcpRtt < 200 ? 'text-orange-400'
+                        : 'text-red-400';
+                      const originMs = result.lastMs;
+                      const originColor = originMs === undefined ? 'text-slate-500'
+                        : originMs < 50 ? 'text-green-400'
+                        : originMs < 150 ? 'text-yellow-400'
+                        : originMs < 300 ? 'text-orange-400'
+                        : 'text-red-400';
+                      return (<>
+                      <tr
+                        className={`hover:bg-slate-700/30 ${rowAccent} ${stripeBg}`}
+                      >
+                        <td className="px-3 py-1.5 whitespace-nowrap">
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={toggleExpand}
+                              className="text-slate-500 hover:text-slate-300 transition-colors flex-shrink-0"
+                              title={isExpanded ? 'Collapse details' : 'Expand details'}
+                            >
+                              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                            </button>
+                            {getStatusIcon(result.status)}
+                            <span className="font-sans text-white">
+                              {result.regionName}
+                            </span>
                           </div>
-                        )}
-                      </td>
-                    </tr>
+                        </td>
+                        <td className={`px-3 py-1.5 text-right ${loss === 0 ? 'text-green-400' : loss < 50 ? 'text-yellow-400' : 'text-red-400'}`}>
+                          {result.sent > 0 ? `${loss.toFixed(0)}%` : '-'}
+                        </td>
+                        <td className={`px-3 py-1.5 text-right font-mono ${rttColor}`}>
+                          {result.clientTcpRtt !== undefined ? `${result.clientTcpRtt}ms` : '-'}
+                        </td>
+                        <td className={`px-3 py-1.5 text-right font-mono ${originColor}`}>
+                          {originMs !== undefined ? `${originMs}ms` : '-'}
+                        </td>
+                        <td className="px-3 py-1.5 whitespace-nowrap text-slate-300 overflow-hidden text-ellipsis" style={{ maxWidth: 200 }}>
+                          {result.colo
+                            ? <><span>{result.colo}</span><span className="text-slate-500"> ({result.coloCity || '?'})</span></>
+                            : '-'}
+                        </td>
+                        <td className="px-3 py-1.5 whitespace-nowrap text-slate-300 overflow-hidden text-ellipsis" style={{ maxWidth: 200 }}>
+                          {egress.colo
+                            ? <><span>{egress.colo}</span><span className="text-slate-500"> ({egress.city || '?'})</span></>
+                            : egress.raw
+                              ? <span className="bg-red-500/20 border border-red-500/40 text-red-300 text-xs px-2 py-0.5 rounded-full">{egress.raw}</span>
+                              : '-'}
+                        </td>
+                        <td className="px-3 py-1.5">
+                          {result.pingHistory.length > 0 && (
+                            <div className="flex items-end gap-px overflow-hidden" style={{ height: 14, width: 104 }}>
+                              {result.pingHistory.slice(-50).map((ping, pi) => {
+                                const ts = new Date(ping.ts).toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+                                if (ping.ms === null) {
+                                  return <div key={pi} title="FAIL" style={{ width: 2, height: 14, backgroundColor: '#ef4444', flexShrink: 0, cursor: 'pointer' }} onClick={() => navigator.clipboard.writeText(`FAIL @ ${ts}`)} />;
+                                }
+                                const color = ping.ms < 100 ? '#22c55e' : ping.ms < 300 ? '#eab308' : '#f97316';
+                                const maxMs = worst || 500;
+                                const h = Math.max(3, Math.round((ping.ms / maxMs) * 14));
+                                return <div key={pi} title={`${ping.ms}ms`} style={{ width: 2, height: Math.min(h, 14), backgroundColor: color, flexShrink: 0, cursor: 'pointer' }} onClick={() => navigator.clipboard.writeText(`${ping.ms}ms @ ${ts}`)} />;
+                              })}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr className={`${rowAccent} ${stripeBg}`}>
+                          <td colSpan={7} className="px-4 pb-2 pt-0">
+                            <div className="border border-slate-700/60 rounded-md bg-slate-900/50 px-4 py-2.5 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs font-sans">
+                              {/* Avg / Best / Worst */}
+                              <div className="flex items-center gap-4">
+                                <span className="text-slate-500 uppercase tracking-wider text-[10px] font-semibold">Origin stats</span>
+                                <span className="text-slate-400">Avg <span className="text-slate-200 font-mono">{avg !== null ? `${avg}ms` : '—'}</span></span>
+                                <span className="text-slate-400">Best <span className="text-green-400 font-mono">{best !== null ? `${best}ms` : '—'}</span></span>
+                                <span className="text-slate-400">Worst <span className="text-red-400 font-mono">{worst !== null ? `${worst}ms` : '—'}</span></span>
+                              </div>
+                              {/* L7 phase breakdown */}
+                              {layer === 'l7' && result.tcpMs !== undefined && (() => {
+                                const total = (result.tcpMs || 0) + (result.tlsHandshakeMs || 0) + (result.httpMs || 0);
+                                const tcpPct = total > 0 ? ((result.tcpMs || 0) / total) * 100 : 0;
+                                const tlsPct = total > 0 ? ((result.tlsHandshakeMs || 0) / total) * 100 : 0;
+                                const httpPct = total > 0 ? ((result.httpMs || 0) / total) * 100 : 0;
+                                return (
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-slate-500 uppercase tracking-wider text-[10px] font-semibold">Phase breakdown</span>
+                                    <div className="flex h-3 rounded overflow-hidden" style={{ width: 120 }}>
+                                      <div style={{ width: `${tcpPct}%`, backgroundColor: '#3b82f6' }} title={`TCP: ${result.tcpMs}ms`} />
+                                      <div style={{ width: `${tlsPct}%`, backgroundColor: '#a855f7' }} title={`TLS: ${result.tlsHandshakeMs}ms`} />
+                                      <div style={{ width: `${httpPct}%`, backgroundColor: '#22c55e' }} title={`TTFB: ${result.httpMs}ms`} />
+                                    </div>
+                                    <div className="flex gap-3 text-slate-300">
+                                      <span><span className="text-blue-400">■</span> TCP <span className="font-mono">{result.tcpMs}ms</span></span>
+                                      {result.tlsHandshakeMs !== undefined && <span><span className="text-purple-400">■</span> TLS <span className="font-mono">{result.tlsHandshakeMs}ms</span></span>}
+                                      {result.httpMs !== undefined && <span><span className="text-green-400">■</span> TTFB <span className="font-mono">{result.httpMs}ms</span></span>}
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </>);
+                    })()}
                     </Fragment>);
                   });
                   })()}
