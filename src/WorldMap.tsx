@@ -44,6 +44,7 @@ interface WorldMapProps {
   targetLocation: TargetLocation | null;
   speedMultiplier: number;  // 1x–100x animation speed multiplier
   soundEnabled: boolean;
+  roundNumber: number;       // incremented by App each time runSingleRound fires
 }
 
 /* ── Provider brand colors ── */
@@ -462,7 +463,7 @@ function drawArc(
   ctx.stroke();
 }
 
-export default function WorldMap({ results, allRegions, homeLocation, targetLocation, speedMultiplier, soundEnabled }: WorldMapProps) {
+export default function WorldMap({ results, allRegions, homeLocation, targetLocation, speedMultiplier, soundEnabled, roundNumber }: WorldMapProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [land, setLand] = useState<FeatureCollection | null>(null);
@@ -470,6 +471,7 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
   const animFrameRef = useRef<number>(0);
   const prevSentRef = useRef<Map<string, number>>(new Map());
   const roundStartRef = useRef<number>(0);
+  const prevRoundRef = useRef<number>(0);
   const mouseRef = useRef<[number, number] | null>(null);
   const latestResultsRef = useRef<TestResult[]>([]);
   const demoIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -581,6 +583,7 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
     if (results.length > 0 && results.every(r => r.sent === 0)) {
       prevSentRef.current.clear();
       roundStartRef.current = 0;
+      prevRoundRef.current = 0;
       packets.length = 0;
       trails.length = 0;
       ripples.length = 0;
@@ -595,9 +598,13 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
     });
     if (!hasNew) return;
 
-    // Detect new round: use 80% of replay delay as threshold to group results
-    const roundThreshold = Math.max(2000, getReplayDelay(currentSpeedMult) * 0.8);
-    if (now - roundStartRef.current > roundThreshold) {
+    // Detect new round: the App increments roundNumber each time runSingleRound fires.
+    // We DON'T wipe animation state here — old animations complete naturally via the
+    // MAX_PACKETS cap and trail fade. Wiping caused the "10 of 143 stragglers" bug
+    // where late-arriving responses from the previous round would show as a tiny batch
+    // after the wipe cleared the rest of the round's animations.
+    if (roundNumber > prevRoundRef.current) {
+      prevRoundRef.current = roundNumber;
       roundStartRef.current = now;
       // Schedule audio at replay time (reads latest results via ref)
       clearSoundTimeouts();
@@ -629,11 +636,18 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
         spawnCount++;
       }
     });
-    if (DEBUG) console.log('[WorldMap] spawnCount:', spawnCount, 'packets.length:', packets.length,
-      'home:', home, 'target:', target, 'startAt:', startAt, 'replayDelay:', replayDelay,
-      'now:', Date.now(), 'demoActive:', demoActive, 'speedMult:', currentSpeedMult,
-      'sampleHttpMs:', results.find(r => r.httpMs != null)?.httpMs);
-  }, [results, homeLocation, targetLocation]);
+    if (DEBUG) {
+      console.log('[WorldMap] spawnCount:', spawnCount, 'packets.length:', packets.length,
+        'home:', home, 'target:', target, 'startAt:', startAt, 'replayDelay:', replayDelay,
+        'now:', Date.now(), 'demoActive:', demoActive, 'speedMult:', currentSpeedMult,
+        'sampleHttpMs:', results.find(r => r.httpMs != null)?.httpMs);
+      // Track per-round spawn counts for testing
+      if (typeof window !== 'undefined' && spawnCount > 0) {
+        const log = (window as any).__roundSpawnLog || ((window as any).__roundSpawnLog = {});
+        log[roundNumber] = (log[roundNumber] || 0) + spawnCount;
+      }
+    }
+  }, [results, homeLocation, targetLocation, roundNumber]);
 
   // Handle resize
   useEffect(() => {

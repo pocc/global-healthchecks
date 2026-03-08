@@ -598,6 +598,7 @@ function App() {
   const [results, setResults] = useState<TestResult[]>([]);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [isRunning, setIsRunning] = useState(false);
+  const [roundNumber, setRoundNumber] = useState(0);
 
   // TCP Only / Full Stack mode
   const [layer, setLayer] = useState<'l4' | 'l7'>((params.get('layer') as 'l4' | 'l7') || 'l4');
@@ -1213,6 +1214,7 @@ function App() {
   };
 
   const runSingleRound = () => {
+    setRoundNumber(n => n + 1);
     const signal = fetchAbortRef.current?.signal;
     selectedRegions.forEach((regionCode, index) => {
       // Parse custom headers from raw text
@@ -1350,6 +1352,7 @@ function App() {
 
     setIsRunning(true);
     setStartTime(Date.now());
+    setRoundNumber(0);
 
     // Initialize results
     const initialResults: TestResult[] = selectedRegions.map((regionCode) => ({
@@ -2429,6 +2432,7 @@ function App() {
             targetLocation={targetLocation}
             speedMultiplier={speedMultiplier}
             soundEnabled={soundEnabled}
+            roundNumber={roundNumber}
           />
           {/* Demo overlay — empty state message over the map */}
           {!results.some(r => r.sent > 0) && (
