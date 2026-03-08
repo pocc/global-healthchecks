@@ -3,6 +3,7 @@ import { geoNaturalEarth1, geoPath, geoInterpolate } from 'd3-geo';
 import { feature } from 'topojson-client';
 import type { FeatureCollection } from 'geojson';
 import { REGION_COORDINATES } from './regionCoordinates';
+import { getColoCity } from './coloMapping';
 
 // Enable verbose animation debugging by adding ?debug to the URL
 const DEBUG = new URLSearchParams(location.search).has('debug');
@@ -28,6 +29,7 @@ interface HomeLocation {
   lng: number;
   city?: string;
   country?: string;
+  colo?: string;
 }
 
 interface TargetLocation {
@@ -993,7 +995,8 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
 
     const tl = targetLocation?.city ? `Target (${targetLocation.city})` : 'Target';
     items.unshift({ color: '#ef4444', label: tl, shape: 'crosshair' });
-    const hl = homeLocation?.city ? `You (${homeLocation.city})` : 'You';
+    const coloCity = getColoCity(homeLocation?.colo);
+    const hl = coloCity ? `You (${coloCity} Colo)` : homeLocation?.city ? `You (${homeLocation.city})` : 'You';
     items.unshift({ color: '#ffffff', label: hl, shape: 'diamond' });
     items.unshift({ color: '#0078D4', label: 'Azure', shape: 'dot' });
     items.unshift({ color: '#34A853', label: 'GCP', shape: 'dot' });
