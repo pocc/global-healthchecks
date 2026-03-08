@@ -99,8 +99,14 @@ const HUB_R_HOVER = 14;  // expanded on hover (px)
    Home → Worker (Cloudflare edge) → Target
    ═══════════════════════════════════════════════════════ */
 
-const REPLAY_DELAY = 5000;  // 5s after pings sent, replay all results
-const MIN_LEG_MS = 16;      // ~1 frame minimum per leg
+const REPLAY_DELAY_BASE = 5000;  // base replay delay at 10x speed
+const MIN_LEG_MS = 16;          // ~1 frame minimum per leg
+
+// Scale replay delay with speed multiplier so animations have time to complete.
+// Uses sqrt scaling: 1x→1.6s, 10x→5s (default), 50x→11.2s, 100x→15.8s
+function getReplayDelay(speedMult: number): number {
+  return Math.round(REPLAY_DELAY_BASE * Math.sqrt(speedMult / 10));
+}
 const MAX_PACKETS = 300;    // 2 concurrent rounds of 143 regions
 const TRAIL_FADE_NORMAL = 1500;    // completed trail fade duration (ms)
 const RIPPLE_DUR = 400;     // impact ripple duration (ms)
@@ -147,7 +153,6 @@ function getCachedGraticule() {
 let currentSpeedMult = 10;     // mirrors prop for module-level functions
 let currentSoundEnabled = false;
 let currentTrailFade = TRAIL_FADE_NORMAL;
-let lastAnimEndTime = 0;       // track when current batch animation ends
 let audioCtx: AudioContext | null = null;
 let soundTimeouts: ReturnType<typeof setTimeout>[] = [];
 
@@ -424,6 +429,11 @@ function spawnPacket(
 
   // legStart = startAt so packet sits dormant until the replay moment
   packets.push({ provider: getProvider(regionCode), failed, legs, legIdx: 0, legStart: startAt });
+
+  // Expose animation state for testing/debugging (only in debug mode)
+  if (DEBUG && typeof window !== 'undefined') {
+    (window as any).__animTotalSpawned = ((window as any).__animTotalSpawned || 0) + 1;
+  }
 }
 
 /* Draw a great-circle arc on projected Canvas */
@@ -571,7 +581,6 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
     if (results.length > 0 && results.every(r => r.sent === 0)) {
       prevSentRef.current.clear();
       roundStartRef.current = 0;
-      lastAnimEndTime = 0;
       packets.length = 0;
       trails.length = 0;
       ripples.length = 0;
@@ -586,27 +595,25 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
     });
     if (!hasNew) return;
 
-    // Detect new round: >4s since last round → new batch
-    if (now - roundStartRef.current > 4000) {
+    // Detect new round: use 80% of replay delay as threshold to group results
+    const roundThreshold = Math.max(2000, getReplayDelay(currentSpeedMult) * 0.8);
+    if (now - roundStartRef.current > roundThreshold) {
       roundStartRef.current = now;
       // Schedule audio at replay time (reads latest results via ref)
       clearSoundTimeouts();
       if (currentSoundEnabled) {
+        const replayDelay = getReplayDelay(currentSpeedMult);
         soundTimeouts.push(setTimeout(() => {
           scheduleBatchSounds(latestResultsRef.current);
-        }, REPLAY_DELAY));
+        }, replayDelay));
       }
     }
 
-    // Compute start time: normally roundStart + 5s, but if previous animation
-    // is still playing and duration > 5s, wait for it to finish
-    let startAt = roundStartRef.current + REPLAY_DELAY;
-    if (lastAnimEndTime > startAt && lastAnimEndTime - startAt > 500) {
-      startAt = lastAnimEndTime + 500;
-    }
+    // All results in the same round share the same start time.
+    // Replay delay scales with speed: shorter at 1x (fast anims), longer at 100x (slow anims).
+    const replayDelay = getReplayDelay(currentSpeedMult);
+    const startAt = roundStartRef.current + replayDelay;
 
-    // Track the longest animation end time for this batch
-    let maxEnd = startAt;
     let spawnCount = 0;
     results.forEach(r => {
       const prev = prevSentRef.current.get(r.region) || 0;
@@ -617,22 +624,15 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
         const lat = r.httpMs != null
           ? Math.sqrt(r.httpMs) * 10
           : r.latencies.length > 0 ? r.latencies[r.latencies.length - 1] : 100;
-        const animDur = lat * currentSpeedMult;
-        const pktEnd = startAt + animDur;
-        if (pktEnd > maxEnd) maxEnd = pktEnd;
         spawnPacket(r.region, lat, home, target, r.status === 'failed', startAt);
         prevSentRef.current.set(r.region, r.sent);
         spawnCount++;
       }
     });
     if (DEBUG) console.log('[WorldMap] spawnCount:', spawnCount, 'packets.length:', packets.length,
-      'home:', home, 'target:', target, 'startAt:', startAt, 'now:', Date.now(),
-      'demoActive:', demoActive, 'speedMult:', currentSpeedMult,
+      'home:', home, 'target:', target, 'startAt:', startAt, 'replayDelay:', replayDelay,
+      'now:', Date.now(), 'demoActive:', demoActive, 'speedMult:', currentSpeedMult,
       'sampleHttpMs:', results.find(r => r.httpMs != null)?.httpMs);
-    // If animation duration > 5s, save end time so next batch waits
-    if (maxEnd - startAt > 5000) {
-      lastAnimEndTime = maxEnd;
-    }
   }, [results, homeLocation, targetLocation]);
 
   // Handle resize
@@ -1029,6 +1029,18 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
     }
 
     /* ── Continue animation loop if there are active elements (or demo is running) ── */
+    // Expose animation state for testing/debugging (only in debug mode)
+    if (DEBUG && typeof window !== 'undefined') {
+      (window as any).__animState = {
+        packets: packets.length,
+        trails: trails.length,
+        ripples: ripples.length,
+        demoActive,
+        lastDrawTime: now,
+        rAFRunning: !!(packets.length || trails.length || ripples.length || demoActive),
+        totalSpawned: (window as any).__animTotalSpawned || 0,
+      };
+    }
     if (packets.length || trails.length || ripples.length || demoActive) {
       animFrameRef.current = requestAnimationFrame(draw);
     } else {
