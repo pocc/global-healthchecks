@@ -599,6 +599,7 @@ function App() {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [isRunning, setIsRunning] = useState(false);
   const [roundNumber, setRoundNumber] = useState(0);
+  const roundRef = useRef(0);
 
   // TCP Only / Full Stack mode
   const [layer, setLayer] = useState<'l4' | 'l7'>((params.get('layer') as 'l4' | 'l7') || 'l4');
@@ -1214,7 +1215,9 @@ function App() {
   };
 
   const runSingleRound = () => {
-    setRoundNumber(n => n + 1);
+    roundRef.current += 1;
+    const thisRound = roundRef.current;
+    setRoundNumber(thisRound);
     const signal = fetchAbortRef.current?.signal;
     selectedRegions.forEach((regionCode, index) => {
       // Parse custom headers from raw text
@@ -1275,6 +1278,8 @@ function App() {
         signal,
       })
         .then(async (response) => {
+          // Discard straggler responses from previous rounds
+          if (thisRound !== roundRef.current) return;
           const cfPlacement = response.headers.get('cf-placement');
           const data = (await response.json()) as {
             success: boolean;
@@ -1326,6 +1331,8 @@ function App() {
         .catch((error) => {
           // Silently ignore aborted requests (user stopped the test)
           if (error instanceof DOMException && error.name === 'AbortError') return;
+          // Discard straggler errors from previous rounds
+          if (thisRound !== roundRef.current) return;
           setResults((prev) =>
             prev.map((r, i) =>
               i === index
@@ -1352,6 +1359,7 @@ function App() {
 
     setIsRunning(true);
     setStartTime(Date.now());
+    roundRef.current = 0;
     setRoundNumber(0);
 
     // Initialize results
