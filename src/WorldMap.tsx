@@ -593,21 +593,14 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
       return;
     }
 
-    // Check if any new results arrived
-    let hasNew = false;
-    results.forEach(r => {
-      if (r.sent > (prevSentRef.current.get(r.region) || 0)) hasNew = true;
-    });
-    if (!hasNew) return;
-
-    // Detect new round: the App increments roundNumber each time runSingleRound fires.
-    // We DON'T wipe animation state here — old animations complete naturally via the
-    // MAX_PACKETS cap and trail fade. Wiping caused the "10 of 143 stragglers" bug
-    // where late-arriving responses from the previous round would show as a tiny batch
-    // after the wipe cleared the rest of the round's animations.
+    // Detect new round as soon as the App increments roundNumber.
+    // Clear visual state immediately so each round starts from a clean screen.
     if (roundNumber > prevRoundRef.current) {
       prevRoundRef.current = roundNumber;
       roundStartRef.current = now;
+      packets.length = 0;
+      trails.length = 0;
+      ripples.length = 0;
       // Schedule audio at replay time (reads latest results via ref)
       clearSoundTimeouts();
       if (currentSoundEnabled) {
@@ -617,6 +610,13 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
         }, replayDelay));
       }
     }
+
+    // Check if any new results arrived
+    let hasNew = false;
+    results.forEach(r => {
+      if (r.sent > (prevSentRef.current.get(r.region) || 0)) hasNew = true;
+    });
+    if (!hasNew) return;
 
     // All results in the same round share the same start time.
     // Replay delay scales with speed: shorter at 1x (fast anims), longer at 100x (slow anims).
