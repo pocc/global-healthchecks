@@ -996,7 +996,14 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
     const tl = targetLocation?.city ? `Target (${targetLocation.city})` : 'Target';
     items.unshift({ color: '#ef4444', label: tl, shape: 'crosshair' });
     const coloCity = getColoCity(homeLocation?.colo);
-    const hl = coloCity ? `You (${coloCity} Colo)` : homeLocation?.city ? `You (${homeLocation.city})` : 'You';
+    const userCity = homeLocation?.city;
+    const hl = userCity && coloCity && userCity !== coloCity
+      ? `You (${userCity} via ${coloCity} Colo)`
+      : coloCity
+        ? `You (${coloCity} Colo)`
+        : userCity
+          ? `You (${userCity})`
+          : 'You';
     items.unshift({ color: '#ffffff', label: hl, shape: 'diamond' });
     items.unshift({ color: '#0078D4', label: 'Azure', shape: 'dot' });
     items.unshift({ color: '#34A853', label: 'GCP', shape: 'dot' });

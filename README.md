@@ -49,8 +49,9 @@ A Cloudflare Worker application that performs TCP port connectivity tests using 
 
 5. **Deploy**:
    ```bash
-   npm run deploy
+   npx wrangler deploy --env production
    ```
+   The `--env production` flag is required to deploy to the routed production worker (`healthchecks.ross.gg`). Without it, you deploy to the default (unrouted) environment.
 
 ## API Endpoints
 

@@ -11,7 +11,7 @@
 - `npm run test:run` — Run Vitest unit/integration tests
 - `npx playwright test` — Run Playwright e2e tests
 - `npx wrangler dev` — Worker dev server
-- `npx wrangler deploy` — Deploy to Cloudflare Workers
+- `npx wrangler deploy --env production` — Deploy to production (`healthchecks.ross.gg`)
 
 ## Validation — CRITICAL
 **ALWAYS run `npm run build` AND `npm run test:run` before recommending `git push` or `npx wrangler deploy`.**
