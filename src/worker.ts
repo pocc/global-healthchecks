@@ -496,23 +496,6 @@ export default {
       return new Response(null, { headers: corsHeaders });
     }
 
-    // Authenticate API requests (all /api/ routes except CORS preflight and /api/geo)
-    if (url.pathname.startsWith('/api/') && url.pathname !== '/api/geo' && url.pathname !== '/api/geo-lookup' && url.pathname !== '/api/datacenters') {
-      const secret = url.searchParams.get('secret');
-      if (!env.API_SECRET || secret !== env.API_SECRET) {
-        return new Response(
-          JSON.stringify({ error: 'Unauthorized: invalid or missing secret parameter' }),
-          {
-            status: 401,
-            headers: {
-              'Content-Type': 'application/json',
-              ...corsHeaders,
-            },
-          }
-        );
-      }
-    }
-
     // Geo endpoint -return caller's location from Cloudflare edge
     if (url.pathname === '/api/geo' && request.method === 'GET') {
       const cf = request.cf as any;
