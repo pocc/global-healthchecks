@@ -102,15 +102,9 @@ const HUB_R_HOVER = 14;  // expanded on hover (px)
    Home → Worker (Cloudflare edge) → Target
    ═══════════════════════════════════════════════════════ */
 
-const REPLAY_DELAY_BASE = 5000;  // base replay delay at 10x speed
 const MIN_LEG_MS = 16;          // ~1 frame minimum per leg
-
-// Scale replay delay with speed multiplier so animations have time to complete.
-// Uses sqrt scaling: 1x→1.6s, 10x→5s (default), 50x→11.2s, 100x→15.8s
-function getReplayDelay(speedMult: number): number {
-  return Math.round(REPLAY_DELAY_BASE * Math.sqrt(speedMult / 10));
-}
 const MAX_PACKETS = 300;    // 2 concurrent rounds of 143 regions
+const ROUND_CLEANUP_MS = 200; // clear all visuals this many ms before next round (5000 - 200 = 4800ms)
 const TRAIL_FADE_NORMAL = 1500;    // completed trail fade duration (ms)
 const RIPPLE_DUR = 400;     // impact ripple duration (ms)
 
@@ -474,6 +468,7 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
   const prevSentRef = useRef<Map<string, number>>(new Map());
   const roundStartRef = useRef<number>(0);
   const prevRoundRef = useRef<number>(0);
+  const cleanupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mouseRef = useRef<[number, number] | null>(null);
   const latestResultsRef = useRef<TestResult[]>([]);
   const demoIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -552,9 +547,15 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
     };
   }, [hasRealResults, homeLocation, targetLocation, allRegions]);
 
-  // Clean up sound timeouts on unmount
+  // Clean up sound timeouts and cleanup timer on unmount
   useEffect(() => {
-    return () => clearSoundTimeouts();
+    return () => {
+      clearSoundTimeouts();
+      if (cleanupTimerRef.current) {
+        clearTimeout(cleanupTimerRef.current);
+        cleanupTimerRef.current = null;
+      }
+    };
   }, []);
 
   // Fetch world topology once
@@ -590,24 +591,39 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
       trails.length = 0;
       ripples.length = 0;
       clearSoundTimeouts();
+      if (cleanupTimerRef.current) {
+        clearTimeout(cleanupTimerRef.current);
+        cleanupTimerRef.current = null;
+      }
       return;
     }
 
     // Detect new round as soon as the App increments roundNumber.
-    // Clear visual state immediately so each round starts from a clean screen.
+    // Schedule a cleanup timer to clear all visuals 200ms before the NEXT round fires.
+    // This way pings from round N disappear at ~4.8s, before round N+1 starts at 5s.
     if (roundNumber > prevRoundRef.current) {
       prevRoundRef.current = roundNumber;
       roundStartRef.current = now;
-      packets.length = 0;
-      trails.length = 0;
-      ripples.length = 0;
-      // Schedule audio at replay time (reads latest results via ref)
+
+      // Cancel any previous cleanup timer
+      if (cleanupTimerRef.current) {
+        clearTimeout(cleanupTimerRef.current);
+        cleanupTimerRef.current = null;
+      }
+
+      // Schedule cleanup at 4.8s (5000 - ROUND_CLEANUP_MS)
+      cleanupTimerRef.current = setTimeout(() => {
+        packets.length = 0;
+        trails.length = 0;
+        ripples.length = 0;
+      }, 5000 - ROUND_CLEANUP_MS);
+
+      // Schedule audio shortly after results start arriving
       clearSoundTimeouts();
       if (currentSoundEnabled) {
-        const replayDelay = getReplayDelay(currentSpeedMult);
         soundTimeouts.push(setTimeout(() => {
           scheduleBatchSounds(latestResultsRef.current);
-        }, replayDelay));
+        }, 500));
       }
     }
 
@@ -618,21 +634,19 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
     });
     if (!hasNew) return;
 
-    // All results in the same round share the same start time.
-    // Replay delay scales with speed: shorter at 1x (fast anims), longer at 100x (slow anims).
-    const replayDelay = getReplayDelay(currentSpeedMult);
-    const startAt = roundStartRef.current + replayDelay;
+    // Animate immediately — no replay delay. Use current time as start.
+    const startAt = Date.now();
 
     let spawnCount = 0;
     results.forEach(r => {
       const prev = prevSentRef.current.get(r.region) || 0;
       if (r.sent > prev) {
-        // For L7 (HTTP) checks, compress animation duration via sqrt(TTFB)*10
-        // so high HTTP latencies (~500-1300ms) produce visible animations.
-        // For L4 (TCP) checks, use raw latency directly.
-        const lat = r.httpMs != null
-          ? Math.sqrt(r.httpMs) * 10
+        // Compress all latencies via sqrt(ms)*10 so pings are visible on screen.
+        // e.g. 50ms→71ms, 200ms→141ms, 500ms→224ms, 1000ms→316ms
+        const rawMs = r.httpMs != null
+          ? r.httpMs
           : r.latencies.length > 0 ? r.latencies[r.latencies.length - 1] : 100;
+        const lat = Math.sqrt(rawMs) * 10;
         spawnPacket(r.region, lat, home, target, r.status === 'failed', startAt);
         prevSentRef.current.set(r.region, r.sent);
         spawnCount++;
@@ -640,7 +654,7 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
     });
     if (DEBUG) {
       console.log('[WorldMap] spawnCount:', spawnCount, 'packets.length:', packets.length,
-        'home:', home, 'target:', target, 'startAt:', startAt, 'replayDelay:', replayDelay,
+        'home:', home, 'target:', target, 'startAt:', startAt,
         'now:', Date.now(), 'demoActive:', demoActive, 'speedMult:', currentSpeedMult,
         'sampleHttpMs:', results.find(r => r.httpMs != null)?.httpMs);
       // Track per-round spawn counts for testing
