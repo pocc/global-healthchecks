@@ -1057,7 +1057,6 @@ function App() {
             error?: string;
             colo?: string;
             coloCity?: string;
-            clientTcpRtt?: number;
             tcpMs?: number;
             tlsVersion?: string;
             tlsCipher?: string;
@@ -1084,7 +1083,6 @@ function App() {
                     colo: data.colo || r.colo,
                     coloCity: data.coloCity || r.coloCity,
                     cfPlacement: cfPlacement || r.cfPlacement,
-                    clientTcpRtt: data.clientTcpRtt ?? r.clientTcpRtt,
                     lastMs: data.latencyMs !== undefined ? data.latencyMs : r.lastMs,
                     tcpMs: data.tcpMs ?? r.tcpMs,
                     tlsVersion: data.tlsVersion || r.tlsVersion,
@@ -2362,7 +2360,6 @@ function App() {
                   <tr>
                     <th className="px-3 py-1.5 text-left font-medium text-slate-400 uppercase tracking-wider">Region</th>
                     <th className="px-3 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-16">Loss%</th>
-                    <th className="px-3 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-20" title="TCP round-trip time from your browser to the Cloudflare edge node, as measured by Cloudflare (request.cf.clientTcpRtt)">Client RTT <svg className="w-3 h-3 inline-block text-slate-500 -mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></th>
                     <th className="px-3 py-1.5 text-right font-medium text-slate-400 uppercase tracking-wider w-20" title="Most recent latency from the Cloudflare edge to the origin server. Click the row chevron to see avg / best / worst and phase breakdown.">Origin <svg className="w-3 h-3 inline-block text-slate-500 -mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></th>
                     <th className="px-3 py-1.5 text-left font-medium text-slate-400 uppercase tracking-wider" style={{ width: 200 }} title="The data center that first received your request (nearest to your location)">Ingress <svg className="w-3 h-3 inline-block text-slate-500 -mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></th>
                     <th className="px-3 py-1.5 text-left font-medium text-slate-400 uppercase tracking-wider" style={{ width: 200 }} title="Where the Worker actually executed and ran the TCP test (derived from cf-placement header)">Egress <svg className="w-3 h-3 inline-block text-slate-500 -mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></th>
@@ -2423,12 +2420,6 @@ function App() {
                         else next.add(result.region);
                         return next;
                       });
-                      const rttColor = result.clientTcpRtt === undefined ? 'text-slate-500'
-                        : result.clientTcpRtt < 20 ? 'text-green-300'
-                        : result.clientTcpRtt < 50 ? 'text-green-400'
-                        : result.clientTcpRtt < 100 ? 'text-yellow-400'
-                        : result.clientTcpRtt < 200 ? 'text-orange-400'
-                        : 'text-red-400';
                       const originMs = result.lastMs;
                       const originColor = originMs === undefined ? 'text-slate-500'
                         : originMs < 50 ? 'text-green-400'
@@ -2456,9 +2447,6 @@ function App() {
                         </td>
                         <td className={`px-3 py-1.5 text-right ${loss === 0 ? 'text-green-400' : loss < 50 ? 'text-yellow-400' : 'text-red-400'}`}>
                           {result.sent > 0 ? `${loss.toFixed(0)}%` : '-'}
-                        </td>
-                        <td className={`px-3 py-1.5 text-right font-mono ${rttColor}`}>
-                          {result.clientTcpRtt !== undefined ? `${result.clientTcpRtt}ms` : '-'}
                         </td>
                         <td className={`px-3 py-1.5 text-right font-mono ${originColor}`}>
                           {originMs !== undefined ? `${originMs}ms` : '-'}
@@ -2512,30 +2500,25 @@ function App() {
                               )}
                               {/* Waterfall breakdown */}
                               {(() => {
-                                const clientRtt = result.clientTcpRtt || 0;
                                 const edgeTcp = result.tcpMs || 0;
                                 const edgeTls = result.tlsHandshakeMs || 0;
                                 const edgeHttp = result.httpMs || 0;
-                                const edgeTotal = layer === 'l7' ? (edgeTcp + edgeTls + edgeHttp) : (result.lastMs || 0);
-                                const total = clientRtt + edgeTotal;
+                                const total = layer === 'l7' ? (edgeTcp + edgeTls + edgeHttp) : (result.lastMs || 0);
                                 if (total <= 0) return null;
-                                const clientPct = (clientRtt / total) * 100;
                                 const segments = layer === 'l7' && result.tcpMs !== undefined
                                   ? [
                                       { pct: (edgeTcp / total) * 100, color: '#3b82f6', label: 'TCP', ms: edgeTcp },
                                       ...(edgeTls > 0 ? [{ pct: (edgeTls / total) * 100, color: '#a855f7', label: 'TLS', ms: edgeTls }] : []),
                                       ...(edgeHttp > 0 ? [{ pct: (edgeHttp / total) * 100, color: '#22c55e', label: 'TTFB', ms: edgeHttp }] : []),
                                     ]
-                                  : [{ pct: (edgeTotal / total) * 100, color: '#3b82f6', label: 'TCP', ms: edgeTotal }];
+                                  : [{ pct: 100, color: '#3b82f6', label: 'TCP', ms: total }];
                                 return (
                                   <div className="flex items-center gap-3">
                                     <span className="text-slate-500 uppercase tracking-wider text-[10px] font-semibold">Waterfall</span>
                                     <div className="flex h-3.5 rounded overflow-hidden" style={{ width: 200 }}>
-                                      {clientRtt > 0 && <div style={{ width: `${clientPct}%`, backgroundColor: '#f59e0b' }} title={`Client → Edge: ${clientRtt}ms`} />}
                                       {segments.map(s => <div key={s.label} style={{ width: `${s.pct}%`, backgroundColor: s.color }} title={`${s.label}: ${s.ms}ms`} />)}
                                     </div>
                                     <div className="flex gap-3 text-slate-300">
-                                      {clientRtt > 0 && <span><span className="text-amber-400">■</span> Edge <span className="font-mono">{clientRtt}ms</span></span>}
                                       {segments.map(s => <span key={s.label}><span style={{ color: s.color }}>■</span> {s.label} <span className="font-mono">{s.ms}ms</span></span>)}
                                       <span className="text-slate-500">Total <span className="font-mono text-slate-300">{total}ms</span></span>
                                     </div>

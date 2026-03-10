@@ -10,7 +10,6 @@ export interface TestResult {
   colo?: string;
   coloCity?: string;
   cfPlacement?: string;
-  clientTcpRtt?: number; // TCP RTT from client to Cloudflare edge, from request.cf
   lastMs?: number; // most recent latencyMs (edge → origin)
   tcpMs?: number;
   /** Not currently populated — cloudflare:sockets connect() does not expose TLS session details */
