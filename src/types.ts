@@ -11,6 +11,7 @@ export interface TestResult {
   coloCity?: string;
   cfPlacement?: string;
   lastMs?: number; // most recent latencyMs (edge → origin)
+  fetchMs?: number; // browser-side fetch duration (includes routing overhead)
   tcpMs?: number;
   /** Not currently populated — cloudflare:sockets connect() does not expose TLS session details */
   tlsVersion?: string;

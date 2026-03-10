@@ -1041,6 +1041,7 @@ function App() {
         ? `/api/check`
         : `https://${regionCode}.healthchecks.ross.gg/api/check`;
 
+      const fetchStart = performance.now();
       fetch(regionalEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1048,6 +1049,7 @@ function App() {
         signal,
       })
         .then(async (response) => {
+          const fetchMs = Math.round(performance.now() - fetchStart);
           // Discard straggler responses from previous rounds
           if (thisRound !== roundRef.current) return;
           const cfPlacement = response.headers.get('cf-placement');
@@ -1084,6 +1086,7 @@ function App() {
                     coloCity: data.coloCity || r.coloCity,
                     cfPlacement: cfPlacement || r.cfPlacement,
                     lastMs: data.latencyMs !== undefined ? data.latencyMs : r.lastMs,
+                    fetchMs,
                     tcpMs: data.tcpMs ?? r.tcpMs,
                     tlsVersion: data.tlsVersion || r.tlsVersion,
                     tlsCipher: data.tlsCipher || r.tlsCipher,
@@ -2500,26 +2503,36 @@ function App() {
                               )}
                               {/* Waterfall breakdown */}
                               {(() => {
-                                const edgeTcp = result.tcpMs || 0;
-                                const edgeTls = result.tlsHandshakeMs || 0;
-                                const edgeHttp = result.httpMs || 0;
-                                const total = layer === 'l7' ? (edgeTcp + edgeTls + edgeHttp) : (result.lastMs || 0);
-                                if (total <= 0) return null;
-                                const segments = layer === 'l7' && result.tcpMs !== undefined
+                                const originTcp = result.tcpMs || 0;
+                                const originTls = result.tlsHandshakeMs || 0;
+                                const originHttp = result.httpMs || 0;
+                                const originTotal = layer === 'l7' ? (originTcp + originTls + originHttp) : (result.lastMs || 0);
+                                if (originTotal <= 0) return null;
+                                // Overhead = browser fetch time minus origin time
+                                // For regional services (ingress === egress): purely client↔edge RTT
+                                // For placement hints (ingress !== egress): client↔edge + inter-colo routing
+                                const overheadMs = result.fetchMs ? Math.max(0, result.fetchMs - originTotal) : 0;
+                                const isRouted = result.colo && egress.colo && result.colo !== egress.colo;
+                                const overheadLabel = isRouted ? `Client + Inter-colo (${result.colo}→${egress.colo})` : 'Client';
+                                const total = overheadMs + originTotal;
+                                const originSegments = layer === 'l7' && result.tcpMs !== undefined
                                   ? [
-                                      { pct: (edgeTcp / total) * 100, color: '#3b82f6', label: 'TCP', ms: edgeTcp },
-                                      ...(edgeTls > 0 ? [{ pct: (edgeTls / total) * 100, color: '#a855f7', label: 'TLS', ms: edgeTls }] : []),
-                                      ...(edgeHttp > 0 ? [{ pct: (edgeHttp / total) * 100, color: '#22c55e', label: 'TTFB', ms: edgeHttp }] : []),
+                                      { pct: (originTcp / total) * 100, color: '#3b82f6', label: 'TCP', ms: originTcp },
+                                      ...(originTls > 0 ? [{ pct: (originTls / total) * 100, color: '#a855f7', label: 'TLS', ms: originTls }] : []),
+                                      ...(originHttp > 0 ? [{ pct: (originHttp / total) * 100, color: '#22c55e', label: 'TTFB', ms: originHttp }] : []),
                                     ]
-                                  : [{ pct: 100, color: '#3b82f6', label: 'TCP', ms: total }];
+                                  : [{ pct: (originTotal / total) * 100, color: '#3b82f6', label: 'TCP', ms: originTotal }];
+                                const overheadPct = (overheadMs / total) * 100;
                                 return (
                                   <div className="flex items-center gap-3">
                                     <span className="text-slate-500 uppercase tracking-wider text-[10px] font-semibold">Waterfall</span>
                                     <div className="flex h-3.5 rounded overflow-hidden" style={{ width: 200 }}>
-                                      {segments.map(s => <div key={s.label} style={{ width: `${s.pct}%`, backgroundColor: s.color }} title={`${s.label}: ${s.ms}ms`} />)}
+                                      {overheadMs > 0 && <div style={{ width: `${overheadPct}%`, backgroundColor: '#f59e0b' }} title={`${overheadLabel}: ${overheadMs}ms`} />}
+                                      {originSegments.map(s => <div key={s.label} style={{ width: `${s.pct}%`, backgroundColor: s.color }} title={`${s.label}: ${s.ms}ms`} />)}
                                     </div>
                                     <div className="flex gap-3 text-slate-300">
-                                      {segments.map(s => <span key={s.label}><span style={{ color: s.color }}>■</span> {s.label} <span className="font-mono">{s.ms}ms</span></span>)}
+                                      {overheadMs > 0 && <span><span className="text-amber-400">■</span> {overheadLabel} <span className="font-mono">{overheadMs}ms</span></span>}
+                                      {originSegments.map(s => <span key={s.label}><span style={{ color: s.color }}>■</span> {s.label} <span className="font-mono">{s.ms}ms</span></span>)}
                                       <span className="text-slate-500">Total <span className="font-mono text-slate-300">{total}ms</span></span>
                                     </div>
                                   </div>
