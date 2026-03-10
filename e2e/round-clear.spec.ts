@@ -46,11 +46,11 @@ async function setupMocks(page: import('@playwright/test').Page) {
   });
 }
 
-async function setSpeed100x(page: import('@playwright/test').Page) {
+async function setSpeedMax(page: import('@playwright/test').Page) {
   const speedButton = page.locator('button[title="Animation speed"]');
   await speedButton.click();
   const slider = page.locator('input[type="range"]');
-  await slider.fill('100');
+  await slider.fill('100'); // 10x (max)
 }
 
 test.describe('Round transition cleanup', () => {
@@ -85,7 +85,7 @@ test.describe('Round transition cleanup', () => {
 
     await page.goto('/?hostname=8.8.8.8&port=53&debug');
     await page.waitForTimeout(2000);
-    await setSpeed100x(page);
+    await setSpeedMax(page);
 
     const runButton = page.locator('button', { hasText: /run/i }).first();
     await expect(runButton).toBeEnabled({ timeout: 10_000 });

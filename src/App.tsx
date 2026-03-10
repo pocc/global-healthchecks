@@ -15,10 +15,18 @@ import {
   Volume2,
   VolumeX,
   AlertTriangle,
+  Link,
+  Check,
 } from 'lucide-react';
 import { COLO_TO_CITY } from './coloMapping';
 import WorldMap from './WorldMap';
 import BUILD_INFO from './buildInfo.json';
+import LatencyStats from './components/LatencyStats';
+import type { TestResult, HomeLocation, TargetLocation, Continent } from './types';
+import {
+  REGIONAL_SERVICES, AWS_PLACEMENT, GCP_PLACEMENT, AZURE_PLACEMENT,
+  CONTINENTS, getContinent, getCountry, getRegionType,
+} from './utils/regions';
 
 interface HealthCheckRequest {
   host: string;
@@ -47,30 +55,6 @@ interface HealthCheckRequest {
   httpHeaders?: Record<string, string>;
   followRedirects?: boolean;
   maxRedirects?: number;
-}
-
-interface TestResult {
-  region: string;
-  regionName: string;
-  status: 'pending' | 'connected' | 'failed';
-  sent: number;
-  received: number;
-  latencies: number[];
-  pingHistory: Array<{ ms: number | null; ts: number }>;
-  lastError?: string;
-  colo?: string;
-  coloCity?: string;
-  cfPlacement?: string;
-  clientTcpRtt?: number; // TCP RTT from client to Cloudflare edge, from request.cf
-  lastMs?: number; // most recent latencyMs (edge → origin)
-  tcpMs?: number;
-  tlsVersion?: string;
-  tlsCipher?: string;
-  tlsHandshakeMs?: number;
-  httpStatusCode?: number;
-  httpStatusText?: string;
-  httpVersion?: string;
-  httpMs?: number;
 }
 
 type TlsVersion = '' | 'TLSv1' | 'TLSv1.1' | 'TLSv1.2' | 'TLSv1.3';
@@ -304,164 +288,6 @@ const TLS_CIPHERS: { name: string; group: string; minVer: number; maxVer: number
   { name: 'DES-CBC3-SHA', group: 'Insecure', minVer: 1, maxVer: 3 },
 ];
 
-// Regional Services - User-friendly subdomains (Primary)
-const REGIONAL_SERVICES = [
-  { code: 'us', name: 'United States', flag: '🇺🇸', description: 'North America' },
-  { code: 'ca', name: 'Canada', flag: '🇨🇦', description: 'North America' },
-  { code: 'eu', name: 'Europe', flag: '🇪🇺', description: 'GDPR Compliant' },
-  { code: 'isoeu', name: 'ISO Europe', flag: '🔒', description: 'Enhanced Security' },
-  { code: 'de', name: 'Germany', flag: '🇩🇪', description: 'Central Europe' },
-  { code: 'jp', name: 'Japan', flag: '🇯🇵', description: 'East Asia' },
-  { code: 'sg', name: 'Singapore', flag: '🇸🇬', description: 'Southeast Asia' },
-  { code: 'kr', name: 'South Korea', flag: '🇰🇷', description: 'East Asia' },
-  { code: 'in', name: 'India', flag: '🇮🇳', description: 'South Asia' },
-  { code: 'au', name: 'Australia', flag: '🇦🇺', description: 'Oceania' },
-];
-
-// Cloud Provider Placement Hints - AWS (34 regions)
-const AWS_PLACEMENT = [
-  { code: 'aws-us-east-1', name: 'AWS: US East (N. Virginia)', flag: '🇺🇸', provider: 'aws' },
-  { code: 'aws-us-east-2', name: 'AWS: US East (Ohio)', flag: '🇺🇸', provider: 'aws' },
-  { code: 'aws-us-west-1', name: 'AWS: US West (N. California)', flag: '🇺🇸', provider: 'aws' },
-  { code: 'aws-us-west-2', name: 'AWS: US West (Oregon)', flag: '🇺🇸', provider: 'aws' },
-  { code: 'aws-af-south-1', name: 'AWS: Africa (Cape Town)', flag: '🇿🇦', provider: 'aws' },
-  { code: 'aws-ap-east-1', name: 'AWS: Asia Pacific (Hong Kong)', flag: '🇭🇰', provider: 'aws' },
-  { code: 'aws-ap-south-1', name: 'AWS: Asia Pacific (Mumbai)', flag: '🇮🇳', provider: 'aws' },
-  { code: 'aws-ap-south-2', name: 'AWS: Asia Pacific (Hyderabad)', flag: '🇮🇳', provider: 'aws' },
-  { code: 'aws-ap-northeast-1', name: 'AWS: Asia Pacific (Tokyo)', flag: '🇯🇵', provider: 'aws' },
-  { code: 'aws-ap-northeast-2', name: 'AWS: Asia Pacific (Seoul)', flag: '🇰🇷', provider: 'aws' },
-  { code: 'aws-ap-northeast-3', name: 'AWS: Asia Pacific (Osaka)', flag: '🇯🇵', provider: 'aws' },
-  { code: 'aws-ap-southeast-1', name: 'AWS: Asia Pacific (Singapore)', flag: '🇸🇬', provider: 'aws' },
-  { code: 'aws-ap-southeast-2', name: 'AWS: Asia Pacific (Sydney)', flag: '🇦🇺', provider: 'aws' },
-  { code: 'aws-ap-southeast-3', name: 'AWS: Asia Pacific (Jakarta)', flag: '🇮🇩', provider: 'aws' },
-  { code: 'aws-ap-southeast-4', name: 'AWS: Asia Pacific (Melbourne)', flag: '🇦🇺', provider: 'aws' },
-  { code: 'aws-ap-southeast-5', name: 'AWS: Asia Pacific (Malaysia)', flag: '🇲🇾', provider: 'aws' },
-  { code: 'aws-ap-southeast-6', name: 'AWS: Asia Pacific (New Zealand)', flag: '🇳🇿', provider: 'aws' },
-  { code: 'aws-ap-southeast-7', name: 'AWS: Asia Pacific (Thailand)', flag: '🇹🇭', provider: 'aws' },
-  { code: 'aws-ap-east-2', name: 'AWS: Asia Pacific (Taipei)', flag: '🇹🇼', provider: 'aws' },
-  { code: 'aws-ca-central-1', name: 'AWS: Canada (Central)', flag: '🇨🇦', provider: 'aws' },
-  { code: 'aws-ca-west-1', name: 'AWS: Canada West (Calgary)', flag: '🇨🇦', provider: 'aws' },
-  { code: 'aws-eu-central-1', name: 'AWS: Europe (Frankfurt)', flag: '🇩🇪', provider: 'aws' },
-  { code: 'aws-eu-central-2', name: 'AWS: Europe (Zurich)', flag: '🇨🇭', provider: 'aws' },
-  { code: 'aws-eu-west-1', name: 'AWS: Europe (Ireland)', flag: '🇮🇪', provider: 'aws' },
-  { code: 'aws-eu-west-2', name: 'AWS: Europe (London)', flag: '🇬🇧', provider: 'aws' },
-  { code: 'aws-eu-west-3', name: 'AWS: Europe (Paris)', flag: '🇫🇷', provider: 'aws' },
-  { code: 'aws-eu-north-1', name: 'AWS: Europe (Stockholm)', flag: '🇸🇪', provider: 'aws' },
-  { code: 'aws-eu-south-1', name: 'AWS: Europe (Milan)', flag: '🇮🇹', provider: 'aws' },
-  { code: 'aws-eu-south-2', name: 'AWS: Europe (Spain)', flag: '🇪🇸', provider: 'aws' },
-  { code: 'aws-il-central-1', name: 'AWS: Israel (Tel Aviv)', flag: '🇮🇱', provider: 'aws' },
-  { code: 'aws-me-south-1', name: 'AWS: Middle East (Bahrain)', flag: '🇧🇭', provider: 'aws' },
-  { code: 'aws-me-central-1', name: 'AWS: Middle East (UAE)', flag: '🇦🇪', provider: 'aws' },
-  { code: 'aws-mx-central-1', name: 'AWS: Mexico (Central)', flag: '🇲🇽', provider: 'aws' },
-  { code: 'aws-sa-east-1', name: 'AWS: South America (São Paulo)', flag: '🇧🇷', provider: 'aws' },
-];
-
-// Cloud Provider Placement Hints - GCP (43 regions)
-const GCP_PLACEMENT = [
-  { code: 'gcp-africa-south1', name: 'GCP: Johannesburg', flag: '🇿🇦', provider: 'gcp' },
-  { code: 'gcp-asia-east1', name: 'GCP: Taiwan', flag: '🇹🇼', provider: 'gcp' },
-  { code: 'gcp-asia-east2', name: 'GCP: Hong Kong', flag: '🇭🇰', provider: 'gcp' },
-  { code: 'gcp-asia-northeast1', name: 'GCP: Tokyo', flag: '🇯🇵', provider: 'gcp' },
-  { code: 'gcp-asia-northeast2', name: 'GCP: Osaka', flag: '🇯🇵', provider: 'gcp' },
-  { code: 'gcp-asia-northeast3', name: 'GCP: Seoul', flag: '🇰🇷', provider: 'gcp' },
-  { code: 'gcp-asia-south1', name: 'GCP: Mumbai', flag: '🇮🇳', provider: 'gcp' },
-  { code: 'gcp-asia-south2', name: 'GCP: Delhi', flag: '🇮🇳', provider: 'gcp' },
-  { code: 'gcp-asia-southeast1', name: 'GCP: Singapore', flag: '🇸🇬', provider: 'gcp' },
-  { code: 'gcp-asia-southeast2', name: 'GCP: Jakarta', flag: '🇮🇩', provider: 'gcp' },
-  { code: 'gcp-asia-southeast3', name: 'GCP: Bangkok', flag: '🇹🇭', provider: 'gcp' },
-  { code: 'gcp-australia-southeast1', name: 'GCP: Sydney', flag: '🇦🇺', provider: 'gcp' },
-  { code: 'gcp-australia-southeast2', name: 'GCP: Melbourne', flag: '🇦🇺', provider: 'gcp' },
-  { code: 'gcp-europe-central2', name: 'GCP: Warsaw', flag: '🇵🇱', provider: 'gcp' },
-  { code: 'gcp-europe-north1', name: 'GCP: Finland', flag: '🇫🇮', provider: 'gcp' },
-  { code: 'gcp-europe-north2', name: 'GCP: Stockholm', flag: '🇸🇪', provider: 'gcp' },
-  { code: 'gcp-europe-southwest1', name: 'GCP: Madrid', flag: '🇪🇸', provider: 'gcp' },
-  { code: 'gcp-europe-west1', name: 'GCP: Belgium', flag: '🇧🇪', provider: 'gcp' },
-  { code: 'gcp-europe-west2', name: 'GCP: London', flag: '🇬🇧', provider: 'gcp' },
-  { code: 'gcp-europe-west3', name: 'GCP: Frankfurt', flag: '🇩🇪', provider: 'gcp' },
-  { code: 'gcp-europe-west4', name: 'GCP: Netherlands', flag: '🇳🇱', provider: 'gcp' },
-  { code: 'gcp-europe-west6', name: 'GCP: Zurich', flag: '🇨🇭', provider: 'gcp' },
-  { code: 'gcp-europe-west8', name: 'GCP: Milan', flag: '🇮🇹', provider: 'gcp' },
-  { code: 'gcp-europe-west9', name: 'GCP: Paris', flag: '🇫🇷', provider: 'gcp' },
-  { code: 'gcp-europe-west10', name: 'GCP: Berlin', flag: '🇩🇪', provider: 'gcp' },
-  { code: 'gcp-europe-west12', name: 'GCP: Turin', flag: '🇮🇹', provider: 'gcp' },
-  { code: 'gcp-me-central1', name: 'GCP: Doha', flag: '🇶🇦', provider: 'gcp' },
-  { code: 'gcp-me-central2', name: 'GCP: Dammam', flag: '🇸🇦', provider: 'gcp' },
-  { code: 'gcp-me-west1', name: 'GCP: Tel Aviv', flag: '🇮🇱', provider: 'gcp' },
-  { code: 'gcp-northamerica-northeast1', name: 'GCP: Montreal', flag: '🇨🇦', provider: 'gcp' },
-  { code: 'gcp-northamerica-northeast2', name: 'GCP: Toronto', flag: '🇨🇦', provider: 'gcp' },
-  { code: 'gcp-northamerica-south1', name: 'GCP: Mexico', flag: '🇲🇽', provider: 'gcp' },
-  { code: 'gcp-southamerica-east1', name: 'GCP: São Paulo', flag: '🇧🇷', provider: 'gcp' },
-  { code: 'gcp-southamerica-west1', name: 'GCP: Santiago', flag: '🇨🇱', provider: 'gcp' },
-  { code: 'gcp-us-central1', name: 'GCP: Iowa', flag: '🇺🇸', provider: 'gcp' },
-  { code: 'gcp-us-east1', name: 'GCP: South Carolina', flag: '🇺🇸', provider: 'gcp' },
-  { code: 'gcp-us-east4', name: 'GCP: Virginia', flag: '🇺🇸', provider: 'gcp' },
-  { code: 'gcp-us-east5', name: 'GCP: Ohio', flag: '🇺🇸', provider: 'gcp' },
-  { code: 'gcp-us-south1', name: 'GCP: Dallas', flag: '🇺🇸', provider: 'gcp' },
-  { code: 'gcp-us-west1', name: 'GCP: Oregon', flag: '🇺🇸', provider: 'gcp' },
-  { code: 'gcp-us-west2', name: 'GCP: Los Angeles', flag: '🇺🇸', provider: 'gcp' },
-  { code: 'gcp-us-west3', name: 'GCP: Utah', flag: '🇺🇸', provider: 'gcp' },
-  { code: 'gcp-us-west4', name: 'GCP: Las Vegas', flag: '🇺🇸', provider: 'gcp' },
-];
-
-// Cloud Provider Placement Hints - Azure (56 regions)
-const AZURE_PLACEMENT = [
-  { code: 'azure-australiacentral', name: 'Azure: Canberra', flag: '🇦🇺', provider: 'azure' },
-  { code: 'azure-australiacentral2', name: 'Azure: Canberra', flag: '🇦🇺', provider: 'azure' },
-  { code: 'azure-australiaeast', name: 'Azure: New South Wales', flag: '🇦🇺', provider: 'azure' },
-  { code: 'azure-australiasoutheast', name: 'Azure: Victoria', flag: '🇦🇺', provider: 'azure' },
-  { code: 'azure-austriaeast', name: 'Azure: Vienna', flag: '🇦🇹', provider: 'azure' },
-  { code: 'azure-belgiumcentral', name: 'Azure: Brussels', flag: '🇧🇪', provider: 'azure' },
-  { code: 'azure-brazilsouth', name: 'Azure: Sao Paulo', flag: '🇧🇷', provider: 'azure' },
-  { code: 'azure-brazilsoutheast', name: 'Azure: Rio', flag: '🇧🇷', provider: 'azure' },
-  { code: 'azure-canadacentral', name: 'Azure: Toronto', flag: '🇨🇦', provider: 'azure' },
-  { code: 'azure-canadaeast', name: 'Azure: Quebec', flag: '🇨🇦', provider: 'azure' },
-  { code: 'azure-centralindia', name: 'Azure: Pune', flag: '🇮🇳', provider: 'azure' },
-  { code: 'azure-centralus', name: 'Azure: Iowa', flag: '🇺🇸', provider: 'azure' },
-  { code: 'azure-chilecentral', name: 'Azure: Santiago', flag: '🇨🇱', provider: 'azure' },
-  { code: 'azure-denmarkeast', name: 'Azure: Copenhagen', flag: '🇩🇰', provider: 'azure' },
-  { code: 'azure-eastasia', name: 'Azure: Hong Kong', flag: '🇭🇰', provider: 'azure' },
-  { code: 'azure-eastus', name: 'Azure: Virginia', flag: '🇺🇸', provider: 'azure' },
-  { code: 'azure-eastus2', name: 'Azure: Virginia', flag: '🇺🇸', provider: 'azure' },
-  { code: 'azure-francecentral', name: 'Azure: Paris', flag: '🇫🇷', provider: 'azure' },
-  { code: 'azure-francesouth', name: 'Azure: Marseille', flag: '🇫🇷', provider: 'azure' },
-  { code: 'azure-germanynorth', name: 'Azure: Berlin', flag: '🇩🇪', provider: 'azure' },
-  { code: 'azure-germanywestcentral', name: 'Azure: Frankfurt', flag: '🇩🇪', provider: 'azure' },
-  { code: 'azure-indonesiacentral', name: 'Azure: Jakarta', flag: '🇮🇩', provider: 'azure' },
-  { code: 'azure-israelcentral', name: 'Azure: Israel', flag: '🇮🇱', provider: 'azure' },
-  { code: 'azure-italynorth', name: 'Azure: Milan', flag: '🇮🇹', provider: 'azure' },
-  { code: 'azure-japaneast', name: 'Azure: Tokyo', flag: '🇯🇵', provider: 'azure' },
-  { code: 'azure-japanwest', name: 'Azure: Osaka', flag: '🇯🇵', provider: 'azure' },
-  { code: 'azure-koreacentral', name: 'Azure: Seoul', flag: '🇰🇷', provider: 'azure' },
-  { code: 'azure-koreasouth', name: 'Azure: Busan', flag: '🇰🇷', provider: 'azure' },
-  { code: 'azure-malaysiawest', name: 'Azure: Kuala Lumpur', flag: '🇲🇾', provider: 'azure' },
-  { code: 'azure-mexicocentral', name: 'Azure: Querétaro', flag: '🇲🇽', provider: 'azure' },
-  { code: 'azure-newzealandnorth', name: 'Azure: Auckland', flag: '🇳🇿', provider: 'azure' },
-  { code: 'azure-northcentralus', name: 'Azure: Illinois', flag: '🇺🇸', provider: 'azure' },
-  { code: 'azure-northeurope', name: 'Azure: Ireland', flag: '🇮🇪', provider: 'azure' },
-  { code: 'azure-norwayeast', name: 'Azure: Norway', flag: '🇳🇴', provider: 'azure' },
-  { code: 'azure-norwaywest', name: 'Azure: Norway', flag: '🇳🇴', provider: 'azure' },
-  { code: 'azure-polandcentral', name: 'Azure: Warsaw', flag: '🇵🇱', provider: 'azure' },
-  { code: 'azure-qatarcentral', name: 'Azure: Doha', flag: '🇶🇦', provider: 'azure' },
-  { code: 'azure-southafricanorth', name: 'Azure: Johannesburg', flag: '🇿🇦', provider: 'azure' },
-  { code: 'azure-southafricawest', name: 'Azure: Cape Town', flag: '🇿🇦', provider: 'azure' },
-  { code: 'azure-southcentralus', name: 'Azure: Texas', flag: '🇺🇸', provider: 'azure' },
-  { code: 'azure-southindia', name: 'Azure: Chennai', flag: '🇮🇳', provider: 'azure' },
-  { code: 'azure-southeastasia', name: 'Azure: Singapore', flag: '🇸🇬', provider: 'azure' },
-  { code: 'azure-spaincentral', name: 'Azure: Madrid', flag: '🇪🇸', provider: 'azure' },
-  { code: 'azure-swedencentral', name: 'Azure: Gävle', flag: '🇸🇪', provider: 'azure' },
-  { code: 'azure-switzerlandnorth', name: 'Azure: Zurich', flag: '🇨🇭', provider: 'azure' },
-  { code: 'azure-switzerlandwest', name: 'Azure: Geneva', flag: '🇨🇭', provider: 'azure' },
-  { code: 'azure-uaecentral', name: 'Azure: Abu Dhabi', flag: '🇦🇪', provider: 'azure' },
-  { code: 'azure-uaenorth', name: 'Azure: Dubai', flag: '🇦🇪', provider: 'azure' },
-  { code: 'azure-uksouth', name: 'Azure: London', flag: '🇬🇧', provider: 'azure' },
-  { code: 'azure-ukwest', name: 'Azure: Cardiff', flag: '🇬🇧', provider: 'azure' },
-  { code: 'azure-westcentralus', name: 'Azure: Wyoming', flag: '🇺🇸', provider: 'azure' },
-  { code: 'azure-westeurope', name: 'Azure: Netherlands', flag: '🇳🇱', provider: 'azure' },
-  { code: 'azure-westindia', name: 'Azure: Mumbai', flag: '🇮🇳', provider: 'azure' },
-  { code: 'azure-westus', name: 'Azure: California', flag: '🇺🇸', provider: 'azure' },
-  { code: 'azure-westus2', name: 'Azure: Washington', flag: '🇺🇸', provider: 'azure' },
-  { code: 'azure-westus3', name: 'Azure: Phoenix', flag: '🇺🇸', provider: 'azure' },
-];
 
 /** Reverse IPv4 octets for Cymru DNS lookup: "1.2.3.4" → "4.3.2.1" */
 const reverseIPv4 = (ip: string): string => ip.split('.').reverse().join('.');
@@ -479,61 +305,6 @@ const reverseIPv6Nibbles = (ip: string): string => {
   }
   return groups.map(g => g.padStart(4, '0')).join('').split('').reverse().join('.');
 };
-
-// Continent mapping for region filtering
-type Continent = 'North America' | 'South America' | 'Europe' | 'Asia Pacific' | 'Middle East' | 'Africa' | 'Oceania';
-const CONTINENTS: Continent[] = ['North America', 'Europe', 'Asia Pacific', 'Oceania', 'Middle East', 'South America', 'Africa'];
-
-// Flag emoji → country name mapping (derived from provider region data)
-const FLAG_TO_COUNTRY: Record<string, string> = {
-  '🇺🇸': 'US', '🇨🇦': 'Canada', '🇲🇽': 'Mexico', '🇧🇷': 'Brazil', '🇨🇱': 'Chile',
-  '🇬🇧': 'UK', '🇩🇪': 'Germany', '🇫🇷': 'France', '🇮🇪': 'Ireland', '🇮🇹': 'Italy',
-  '🇪🇸': 'Spain', '🇸🇪': 'Sweden', '🇨🇭': 'Switzerland', '🇳🇱': 'Netherlands', '🇵🇱': 'Poland',
-  '🇧🇪': 'Belgium', '🇫🇮': 'Finland', '🇦🇹': 'Austria', '🇳🇴': 'Norway', '🇩🇰': 'Denmark',
-  '🇯🇵': 'Japan', '🇰🇷': 'South Korea', '🇮🇳': 'India', '🇸🇬': 'Singapore', '🇭🇰': 'Hong Kong',
-  '🇹🇼': 'Taiwan', '🇮🇩': 'Indonesia', '🇲🇾': 'Malaysia', '🇹🇭': 'Thailand',
-  '🇦🇺': 'Australia', '🇳🇿': 'New Zealand',
-  '🇮🇱': 'Israel', '🇧🇭': 'Bahrain', '🇦🇪': 'UAE', '🇶🇦': 'Qatar', '🇸🇦': 'Saudi Arabia',
-  '🇿🇦': 'South Africa',
-  '🇪🇺': 'EU', '🔒': 'ISO EU',
-};
-
-const REGION_TO_COUNTRY: Record<string, string> = Object.fromEntries(
-  [...REGIONAL_SERVICES, ...AWS_PLACEMENT, ...GCP_PLACEMENT, ...AZURE_PLACEMENT]
-    .map(r => [r.code, FLAG_TO_COUNTRY[r.flag] || r.flag])
-);
-
-function getCountry(code: string): string {
-  return REGION_TO_COUNTRY[code] || 'Unknown';
-}
-
-function getContinent(code: string): Continent {
-  // Cloudflare Regional Services
-  if (code === 'us' || code === 'ca') return 'North America';
-  if (code === 'eu' || code === 'isoeu' || code === 'de') return 'Europe';
-  if (code === 'jp' || code === 'kr' || code === 'sg' || code === 'in') return 'Asia Pacific';
-  if (code === 'au') return 'Oceania';
-
-  // Strip provider prefix for pattern matching
-  const geo = code.replace(/^(aws|gcp|azure)-/, '');
-
-  // North America
-  if (/^(us|ca|northamerica|centralus|eastus|westus|northcentralus|southcentralus|westcentralus|mexicocentral|mx)/.test(geo)) return 'North America';
-  // South America
-  if (/^(sa-|southamerica|brazil|chile)/.test(geo)) return 'South America';
-  // Europe
-  if (/^(eu-|europe|uk|france|germany|german|italy|spain|sweden|switzerland|norway|poland|denmark|belgium|austria|northeurope|westeurope)/.test(geo)) return 'Europe';
-  // Africa
-  if (/^(af-|africa|southafrica)/.test(geo)) return 'Africa';
-  // Middle East
-  if (/^(me-|il-|israel|qatar|uae)/.test(geo)) return 'Middle East';
-  // Oceania
-  if (/^(australia|newzealand)/.test(geo)) return 'Oceania';
-  // Asia Pacific (catch-all for ap-*, asia-*, japan*, korea*, india*, southeast*, eastasia, malaysia, indonesia)
-  if (/^(ap-|asia|japan|korea|india|southindia|centralindia|westindia|southeast|eastasia|malaysia|indonesia)/.test(geo)) return 'Asia Pacific';
-
-  return 'Asia Pacific'; // fallback
-}
 
 const CLOUDFLARE_ASN = '13335';
 
@@ -618,10 +389,10 @@ function App() {
 
   // About modal
   const [aboutOpen, setAboutOpen] = useState(false);
-  const [speedSlider, setSpeedSlider] = useState(50); // 0-100 log scale → 1x-100x
+  const [speedSlider, setSpeedSlider] = useState(100); // 0-100 log scale → 1x-10x
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [speedPanelOpen, setSpeedPanelOpen] = useState(false);
-  const speedMultiplier = Math.pow(100, speedSlider / 100); // 1x at 0, 10x at 50, 100x at 100
+  const speedMultiplier = Math.pow(10, speedSlider / 100); // 1x at 0, ~3.2x at 50, 10x at 100
   const [continentFilter, setContinentFilter] = useState<Continent | null>(null);
   const [countryFilter, setCountryFilter] = useState<string | null>(null);
 
@@ -692,11 +463,9 @@ function App() {
   const fetchAbortRef = useRef<AbortController | null>(null);
   const ipInputRef = useRef<HTMLInputElement | null>(null);
   const [startTime, setStartTime] = useState<number | null>(null);
-  const [homeLocation, setHomeLocation] = useState<{ lat: number; lng: number; city?: string; country?: string; colo?: string } | null>(null);
-  const [targetLocation, setTargetLocation] = useState<{ lat: number; lng: number; city?: string; country?: string } | null>(null);
+  const [homeLocation, setHomeLocation] = useState<HomeLocation | null>(null);
+  const [targetLocation, setTargetLocation] = useState<TargetLocation | null>(null);
 
-  // API secret for authenticated requests
-  const apiSecret = import.meta.env.VITE_API_SECRET || '';
 
   // Fetch user's geolocation from Cloudflare edge on mount
   useEffect(() => {
@@ -1157,6 +926,14 @@ function App() {
     return { colo: '', city: '' };
   };
 
+  const [linkCopied, setLinkCopied] = useState(false);
+  const copyLink = () => {
+    navigator.clipboard.writeText(window.location.href).then(() => {
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    });
+  };
+
   const downloadCsv = () => {
     const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
     const headers = ['Region', 'Loss%', 'Avg (ms)', 'Best (ms)', 'Worst (ms)', 'Ingress Colo', 'Ingress City', 'Egress Colo', 'Egress City'];
@@ -1205,13 +982,6 @@ function App() {
     const azure = AZURE_PLACEMENT.find((r) => r.code === code);
     if (azure) return azure.name;
     return code;
-  };
-
-  const getRegionType = (code: string): 'regional' | 'aws' | 'gcp' | 'azure' => {
-    if (REGIONAL_SERVICES.some((r) => r.code === code)) return 'regional';
-    if (code.startsWith('aws-')) return 'aws';
-    if (code.startsWith('gcp-')) return 'gcp';
-    return 'azure';
   };
 
   const runSingleRound = () => {
@@ -1268,8 +1038,8 @@ function App() {
       };
 
       const regionalEndpoint = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-        ? `/api/check?secret=${apiSecret}`
-        : `https://${regionCode}.healthchecks.ross.gg/api/check?secret=${apiSecret}`;
+        ? `/api/check`
+        : `https://${regionCode}.healthchecks.ross.gg/api/check`;
 
       fetch(regionalEndpoint, {
         method: 'POST',
@@ -1296,6 +1066,7 @@ function App() {
             httpStatusText?: string;
             httpVersion?: string;
             httpMs?: number;
+            resolvedIp?: string;
           };
 
 
@@ -1323,6 +1094,7 @@ function App() {
                     httpStatusText: data.httpStatusText || r.httpStatusText,
                     httpVersion: data.httpVersion || r.httpVersion,
                     httpMs: data.httpMs ?? r.httpMs,
+                    resolvedIp: data.resolvedIp || r.resolvedIp,
                   }
                 : r
             )
@@ -2421,6 +2193,14 @@ function App() {
               </button>
             </>
           )}
+
+          <button
+            onClick={copyLink}
+            className="flex items-center gap-2 px-4 py-2.5 bg-slate-700 hover:bg-slate-600 text-white font-medium rounded-lg transition-colors text-sm"
+          >
+            {linkCopied ? <Check className="w-4 h-4 text-green-400" /> : <Link className="w-4 h-4" />}
+            {linkCopied ? 'Copied!' : 'Share'}
+          </button>
         </div>
 
         {/* World Map */}
@@ -2465,13 +2245,12 @@ function App() {
                   max={100}
                   value={speedSlider}
                   onChange={(e) => {
-                    let v = Number(e.target.value);
-                    if (Math.abs(v - 50) <= 3) v = 50;
+                    const v = Number(e.target.value);
                     setSpeedSlider(v);
                   }}
                   className="w-20 h-1 appearance-none bg-slate-700 rounded-full cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-slate-400 [&::-webkit-slider-thumb]:hover:bg-white"
                 />
-                <span className="text-[9px] text-slate-600 font-mono select-none">100×</span>
+                <span className="text-[9px] text-slate-600 font-mono select-none">10×</span>
                 <button
                   onClick={() => setSoundEnabled(!soundEnabled)}
                   className={`ml-1 p-0.5 rounded transition-colors ${soundEnabled ? 'text-primary' : 'text-slate-600 hover:text-slate-400'}`}
@@ -2573,6 +2352,7 @@ function App() {
                   </div>
                 );
               })()}
+              <LatencyStats results={results} />
             </div>
 
             {/* Results Table */}
@@ -2723,24 +2503,41 @@ function App() {
                                 <span className="text-slate-400">Best <span className="text-green-400 font-mono">{best !== null ? `${best}ms` : '—'}</span></span>
                                 <span className="text-slate-400">Worst <span className="text-red-400 font-mono">{worst !== null ? `${worst}ms` : '—'}</span></span>
                               </div>
-                              {/* L7 phase breakdown */}
-                              {layer === 'l7' && result.tcpMs !== undefined && (() => {
-                                const total = (result.tcpMs || 0) + (result.tlsHandshakeMs || 0) + (result.httpMs || 0);
-                                const tcpPct = total > 0 ? ((result.tcpMs || 0) / total) * 100 : 0;
-                                const tlsPct = total > 0 ? ((result.tlsHandshakeMs || 0) / total) * 100 : 0;
-                                const httpPct = total > 0 ? ((result.httpMs || 0) / total) * 100 : 0;
+                              {/* Resolved IP */}
+                              {result.resolvedIp && (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-slate-500 uppercase tracking-wider text-[10px] font-semibold">Resolved IP</span>
+                                  <span className="text-slate-200 font-mono">{result.resolvedIp}</span>
+                                </div>
+                              )}
+                              {/* Waterfall breakdown */}
+                              {(() => {
+                                const clientRtt = result.clientTcpRtt || 0;
+                                const edgeTcp = result.tcpMs || 0;
+                                const edgeTls = result.tlsHandshakeMs || 0;
+                                const edgeHttp = result.httpMs || 0;
+                                const edgeTotal = layer === 'l7' ? (edgeTcp + edgeTls + edgeHttp) : (result.lastMs || 0);
+                                const total = clientRtt + edgeTotal;
+                                if (total <= 0) return null;
+                                const clientPct = (clientRtt / total) * 100;
+                                const segments = layer === 'l7' && result.tcpMs !== undefined
+                                  ? [
+                                      { pct: (edgeTcp / total) * 100, color: '#3b82f6', label: 'TCP', ms: edgeTcp },
+                                      ...(edgeTls > 0 ? [{ pct: (edgeTls / total) * 100, color: '#a855f7', label: 'TLS', ms: edgeTls }] : []),
+                                      ...(edgeHttp > 0 ? [{ pct: (edgeHttp / total) * 100, color: '#22c55e', label: 'TTFB', ms: edgeHttp }] : []),
+                                    ]
+                                  : [{ pct: (edgeTotal / total) * 100, color: '#3b82f6', label: 'TCP', ms: edgeTotal }];
                                 return (
                                   <div className="flex items-center gap-3">
-                                    <span className="text-slate-500 uppercase tracking-wider text-[10px] font-semibold">Phase breakdown</span>
-                                    <div className="flex h-3 rounded overflow-hidden" style={{ width: 120 }}>
-                                      <div style={{ width: `${tcpPct}%`, backgroundColor: '#3b82f6' }} title={`TCP: ${result.tcpMs}ms`} />
-                                      <div style={{ width: `${tlsPct}%`, backgroundColor: '#a855f7' }} title={`TLS: ${result.tlsHandshakeMs}ms`} />
-                                      <div style={{ width: `${httpPct}%`, backgroundColor: '#22c55e' }} title={`TTFB: ${result.httpMs}ms`} />
+                                    <span className="text-slate-500 uppercase tracking-wider text-[10px] font-semibold">Waterfall</span>
+                                    <div className="flex h-3.5 rounded overflow-hidden" style={{ width: 200 }}>
+                                      {clientRtt > 0 && <div style={{ width: `${clientPct}%`, backgroundColor: '#f59e0b' }} title={`Client → Edge: ${clientRtt}ms`} />}
+                                      {segments.map(s => <div key={s.label} style={{ width: `${s.pct}%`, backgroundColor: s.color }} title={`${s.label}: ${s.ms}ms`} />)}
                                     </div>
                                     <div className="flex gap-3 text-slate-300">
-                                      <span><span className="text-blue-400">■</span> TCP <span className="font-mono">{result.tcpMs}ms</span></span>
-                                      {result.tlsHandshakeMs !== undefined && <span><span className="text-purple-400">■</span> TLS <span className="font-mono">{result.tlsHandshakeMs}ms</span></span>}
-                                      {result.httpMs !== undefined && <span><span className="text-green-400">■</span> TTFB <span className="font-mono">{result.httpMs}ms</span></span>}
+                                      {clientRtt > 0 && <span><span className="text-amber-400">■</span> Edge <span className="font-mono">{clientRtt}ms</span></span>}
+                                      {segments.map(s => <span key={s.label}><span style={{ color: s.color }}>■</span> {s.label} <span className="font-mono">{s.ms}ms</span></span>)}
+                                      <span className="text-slate-500">Total <span className="font-mono text-slate-300">{total}ms</span></span>
                                     </div>
                                   </div>
                                 );
