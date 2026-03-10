@@ -35,6 +35,7 @@ wrangler.toml.bak
 # Testing
 coverage/
 *.lcov
+test-results/
 
 # Logs
 logs/

@@ -4,40 +4,10 @@ import { feature } from 'topojson-client';
 import type { FeatureCollection } from 'geojson';
 import { REGION_COORDINATES } from './regionCoordinates';
 import { getColoCity } from './coloMapping';
+import type { TestResult, HomeLocation, TargetLocation } from './types';
 
 // Enable verbose animation debugging by adding ?debug to the URL
 const DEBUG = new URLSearchParams(location.search).has('debug');
-
-interface TestResult {
-  region: string;
-  regionName: string;
-  status: 'pending' | 'connected' | 'failed';
-  sent: number;
-  received: number;
-  latencies: number[];
-  lastError?: string;
-  colo?: string;
-  coloCity?: string;
-  cfPlacement?: string;
-  tcpMs?: number;
-  tlsHandshakeMs?: number;
-  httpMs?: number;
-}
-
-interface HomeLocation {
-  lat: number;
-  lng: number;
-  city?: string;
-  country?: string;
-  colo?: string;
-}
-
-interface TargetLocation {
-  lat: number;
-  lng: number;
-  city?: string;
-  country?: string;
-}
 
 interface WorldMapProps {
   results: TestResult[];
