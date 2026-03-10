@@ -24,25 +24,6 @@ function cacheResult(result: HealthCheckResult): void {
   }
 }
 
-/**
- * Resolve hostname via Cloudflare DoH (DNS-over-HTTPS) JSON API.
- * Returns the resolved IP or null if lookup fails. Non-blocking to the health check.
- */
-async function workerDohResolve(hostname: string): Promise<string | null> {
-  try {
-    const res = await fetch(
-      `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(hostname)}&type=A`,
-      { headers: { Accept: 'application/dns-json' } }
-    );
-    const data = await res.json() as { Answer?: { type: number; data: string }[] };
-    return data.Answer?.find(a => a.type === 1)?.data ?? null;
-  } catch {
-    return null;
-  }
-}
-
-const IP_RE = /^(\d{1,3}\.){3}\d{1,3}$|^[0-9a-fA-F:]+$/;
-
 interface HealthCheckRequest {
   host: string;
   port: number;
@@ -86,9 +67,7 @@ interface HealthCheckResult {
   cfPlacement?: string;
   clientTcpRtt?: number; // TCP RTT from client to Cloudflare edge (ms), from request.cf
   tcpMs?: number;
-  /** Not currently populated — cloudflare:sockets connect() does not expose TLS session details */
   tlsVersion?: string;
-  /** Not currently populated — cloudflare:sockets connect() does not expose TLS session details */
   tlsCipher?: string;
   tlsHandshakeMs?: number;
   httpStatusCode?: number;
@@ -97,7 +76,6 @@ interface HealthCheckResult {
   httpMs?: number; // time to first byte after request sent
   redirectCount?: number;
   redirectUrl?: string; // final redirect destination (if followed)
-  resolvedIp?: string; // DNS-resolved IP from edge DoH lookup
 }
 
 /**
@@ -494,6 +472,7 @@ function isBlockedHost(host: string): string | null {
 }
 
 interface Env {
+  API_SECRET: string;
   ASSETS: { fetch: (request: Request) => Promise<Response> };
 }
 
@@ -504,31 +483,34 @@ export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
-    // CORS: reflect allowed origins instead of wildcard
-    const origin = request.headers.get('Origin') ?? '';
-    const ALLOWED_ORIGINS = [
-      'https://healthchecks.ross.gg',
-      'http://localhost:5173',
-      'http://127.0.0.1:5173',
-    ];
-    let allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : '';
-    if (!allowedOrigin) {
-      try {
-        const u = new URL(origin);
-        if (u.hostname.endsWith('.healthchecks.ross.gg')) allowedOrigin = origin;
-      } catch { /* not a valid URL */ }
-    }
-    const corsHeaders: Record<string, string> = {
-      ...(allowedOrigin ? { 'Access-Control-Allow-Origin': allowedOrigin } : {}),
+    // Add CORS headers
+    const corsHeaders = {
+      'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
       'Access-Control-Expose-Headers': 'cf-placement, cf-ray',
-      'Vary': 'Origin',
     };
 
     // Handle CORS preflight
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders });
+    }
+
+    // Authenticate API requests (all /api/ routes except CORS preflight and /api/geo)
+    if (url.pathname.startsWith('/api/') && url.pathname !== '/api/geo' && url.pathname !== '/api/geo-lookup' && url.pathname !== '/api/datacenters') {
+      const secret = url.searchParams.get('secret');
+      if (!env.API_SECRET || secret !== env.API_SECRET) {
+        return new Response(
+          JSON.stringify({ error: 'Unauthorized: invalid or missing secret parameter' }),
+          {
+            status: 401,
+            headers: {
+              'Content-Type': 'application/json',
+              ...corsHeaders,
+            },
+          }
+        );
+      }
     }
 
     // Geo endpoint -return caller's location from Cloudflare edge
@@ -706,9 +688,6 @@ export default {
           );
         }
 
-        // Resolve DNS from this edge location (reveals geo-DNS differences)
-        const resolvedIp = IP_RE.test(body.host) ? body.host : await workerDohResolve(body.host);
-
         const result = body.httpEnabled
           ? await testHttpPort(body)
           : body.tlsEnabled
@@ -727,7 +706,6 @@ export default {
           colo,
           coloCity: getColoCity(colo),
           clientTcpRtt: cf?.clientTcpRtt !== undefined ? Math.round(cf.clientTcpRtt) : undefined,
-          resolvedIp: resolvedIp || undefined,
           _debug: {
             httpEnabled: body.httpEnabled,
             tlsEnabled: body.tlsEnabled,
