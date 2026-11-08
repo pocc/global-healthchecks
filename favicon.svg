@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Dark blue background -->
+  <rect width="64" height="64" fill="#1a237e"/>
+  <!-- Globe -->
+  <circle cx="32" cy="32" r="22" fill="#2196F3" stroke="#1565C0" stroke-width="2"/>
+  <!-- Latitude lines -->
+  <ellipse cx="32" cy="32" rx="22" ry="8" fill="none" stroke="#64B5F6" stroke-width="1"/>
+  <ellipse cx="32" cy="32" rx="22" ry="16" fill="none" stroke="#64B5F6" stroke-width="1"/>
+  <!-- Longitude line -->
+  <ellipse cx="32" cy="32" rx="8" ry="22" fill="none" stroke="#64B5F6" stroke-width="1"/>
+  <!-- Checkmark -->
+  <path d="M 24 32 L 30 38 L 42 24" fill="none" stroke="#4CAF50" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

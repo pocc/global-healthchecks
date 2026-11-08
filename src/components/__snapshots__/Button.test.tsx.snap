@@ -1,0 +1,83 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Button Component > Snapshot Testing > should match snapshot for danger button 1`] = `
+<button
+  aria-busy="false"
+  class="font-semibold rounded-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 bg-red-500 hover:bg-red-600 text-white focus:ring-red-500 disabled:bg-red-300 px-4 py-2 text-base"
+>
+  Delete
+</button>
+`;
+
+exports[`Button Component > Snapshot Testing > should match snapshot for disabled state 1`] = `
+<button
+  aria-busy="false"
+  class="font-semibold rounded-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 bg-orange-500 hover:bg-orange-600 text-white focus:ring-orange-500 disabled:bg-orange-300 px-4 py-2 text-base"
+  disabled=""
+>
+  Disabled
+</button>
+`;
+
+exports[`Button Component > Snapshot Testing > should match snapshot for full width button 1`] = `
+<button
+  aria-busy="false"
+  class="font-semibold rounded-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 bg-orange-500 hover:bg-orange-600 text-white focus:ring-orange-500 disabled:bg-orange-300 px-4 py-2 text-base w-full"
+>
+  Full Width
+</button>
+`;
+
+exports[`Button Component > Snapshot Testing > should match snapshot for loading state 1`] = `
+<button
+  aria-busy="true"
+  aria-label="Loading"
+  class="font-semibold rounded-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 bg-orange-500 hover:bg-orange-600 text-white focus:ring-orange-500 disabled:bg-orange-300 px-4 py-2 text-base"
+  disabled=""
+>
+  <span
+    class="flex items-center justify-center"
+  >
+    <svg
+      aria-hidden="true"
+      class="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
+      fill="none"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <circle
+        class="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        stroke-width="4"
+      />
+      <path
+        class="opacity-75"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+        fill="currentColor"
+      />
+    </svg>
+    Loading...
+  </span>
+</button>
+`;
+
+exports[`Button Component > Snapshot Testing > should match snapshot for primary button 1`] = `
+<button
+  aria-busy="false"
+  class="font-semibold rounded-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 bg-orange-500 hover:bg-orange-600 text-white focus:ring-orange-500 disabled:bg-orange-300 px-4 py-2 text-base"
+>
+  Primary
+</button>
+`;
+
+exports[`Button Component > Snapshot Testing > should match snapshot for secondary button 1`] = `
+<button
+  aria-busy="false"
+  class="font-semibold rounded-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 bg-gray-600 hover:bg-gray-700 text-white focus:ring-gray-500 disabled:bg-gray-300 px-4 py-2 text-base"
+>
+  Secondary
+</button>
+`;
