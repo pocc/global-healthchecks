@@ -30,26 +30,4 @@ export const handlers = [
       timestamp: Date.now(),
     });
   }),
-
-  // Mock batch checks
-  http.post('/api/batch-check', async () => {
-    return HttpResponse.json({
-      results: [
-        {
-          success: true,
-          host: 'example.com',
-          port: 80,
-          latencyMs: 30,
-          timestamp: Date.now(),
-        },
-        {
-          success: true,
-          host: 'example.com',
-          port: 443,
-          latencyMs: 35,
-          timestamp: Date.now(),
-        },
-      ],
-    });
-  }),
 ];

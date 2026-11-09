@@ -178,41 +178,6 @@ describe('Health Check API Integration', () => {
   });
 });
 
-describe('Batch Health Check API', () => {
-  it('should fetch batch health check results', async () => {
-    const response = await fetch('/api/batch-check', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        checks: [
-          { host: 'example.com', port: 80 },
-          { host: 'example.com', port: 443 },
-        ],
-      }),
-    });
-
-    const data = (await response.json()) as {
-      results: Array<{
-        success: boolean;
-        host: string;
-        port: number;
-      }>;
-    };
-
-    expect(data.results).toHaveLength(2);
-    expect(data.results[0]).toMatchObject({
-      success: true,
-      host: 'example.com',
-      port: 80,
-    });
-    expect(data.results[1]).toMatchObject({
-      success: true,
-      host: 'example.com',
-      port: 443,
-    });
-  });
-});
-
 describe('MSW Handler Testing', () => {
   it('should use MSW to mock API calls', async () => {
     const response = await fetch('/api/check', {

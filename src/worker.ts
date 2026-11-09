@@ -6,28 +6,18 @@
 
 import { connect } from 'cloudflare:sockets';
 import { getColoCity, COLO_TO_CITY } from './coloMapping';
+import { isBlockedHost } from './utils/ssrf';
 
 interface HealthCheckRequest {
   host: string;
   port: number;
   timeout?: number;
   connectTimeout?: number; // TCP connect timeout (ms)
-  idleTimeout?: number; // socket idle timeout (ms)
-  keepAlive?: boolean; // enable TCP keep-alive
-  keepAliveInitialDelay?: number; // keep-alive initial delay (ms)
   retries?: number; // number of retry attempts
   retryBackoff?: boolean; // use exponential backoff
   region?: string;
   tlsEnabled?: boolean;
-  tlsServername?: string; // SNI servername (defaults to host)
-  minTlsVersion?: string; // 'TLSv1', 'TLSv1.1', 'TLSv1.2', 'TLSv1.3'
-  maxTlsVersion?: string;
-  ciphers?: string; // colon-separated OpenSSL cipher list
-  clientCert?: string; // PEM-encoded client certificate (mTLS)
-  clientKey?: string; // PEM-encoded private key (mTLS)
-  caBundlePem?: string; // PEM-encoded CA bundle (custom trust store)
-  ocspStapling?: boolean; // request OCSP stapling
-  pinnedPublicKey?: string; // SHA-256 hash for certificate pinning
+  tlsServername?: string; // HTTP Host header (defaults to host); SNI is always host
   httpEnabled?: boolean;
   httpMethod?: string; // GET, HEAD, POST, OPTIONS
   httpPath?: string; // default '/'
@@ -399,61 +389,6 @@ async function testHttpPort(
 }
 
 
-/**
- * SSRF protection: block connections to private/internal/link-local addresses.
- * Returns an error string if blocked, or null if allowed.
- */
-function isBlockedHost(host: string): string | null {
-  // Normalize to lowercase for comparison
-  const h = host.toLowerCase().trim();
-
-  // Block empty hosts
-  if (!h) return 'Empty host';
-
-  // Strip brackets from IPv6 (e.g. [::1] → ::1)
-  const stripped = h.startsWith('[') && h.endsWith(']') ? h.slice(1, -1) : h;
-
-  // Block IPv6 loopback, unspecified, private (fc00::/7), link-local (fe80::/10)
-  if (stripped === '::1' || stripped === '::') {
-    return 'Loopback/unspecified address blocked';
-  }
-  if (/^f[cd][0-9a-f]{0,2}:/i.test(stripped)) return 'IPv6 private (fc00::/7) blocked';
-  if (/^fe[89ab][0-9a-f]:/i.test(stripped)) return 'IPv6 link-local (fe80::/10) blocked';
-  // Block IPv4-mapped IPv6 (::ffff:x.x.x.x)
-  if (/^::ffff:/i.test(stripped)) return 'IPv4-mapped IPv6 address blocked';
-
-  // Block well-known internal hostnames
-  if (h === 'localhost' || h.endsWith('.localhost') ||
-      h === 'metadata.google.internal' ||
-      h.endsWith('.internal')) {
-    return 'Internal hostname blocked';
-  }
-
-  // Check if it's an IPv4 address
-  const ipv4Match = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (ipv4Match) {
-    const [, a, b, c] = ipv4Match.map(Number);
-    // 127.0.0.0/8 loopback
-    if (a === 127) return 'Loopback address blocked';
-    // 0.0.0.0/8
-    if (a === 0) return 'Unspecified address blocked';
-    // 10.0.0.0/8
-    if (a === 10) return 'Private address (10/8) blocked';
-    // 172.16.0.0/12
-    if (a === 172 && b >= 16 && b <= 31) return 'Private address (172.16/12) blocked';
-    // 192.168.0.0/16
-    if (a === 192 && b === 168) return 'Private address (192.168/16) blocked';
-    // 169.254.0.0/16 link-local (includes cloud metadata 169.254.169.254)
-    if (a === 169 && b === 254) return 'Link-local address blocked';
-    // 100.64.0.0/10 CGNAT
-    if (a === 100 && b >= 64 && b <= 127) return 'CGNAT address blocked';
-    // 192.0.0.0/24 IETF protocol assignments
-    if (a === 192 && b === 0 && c === 0) return 'IETF reserved address blocked';
-  }
-
-  return null;
-}
-
 interface Env {
   ASSETS: { fetch: (request: Request) => Promise<Response> };
 }
@@ -676,88 +611,6 @@ export default {
       }
     }
 
-    // Batch health checks endpoint
-    if (url.pathname === '/api/batch-check' && request.method === 'POST') {
-      try {
-        const body: { checks: HealthCheckRequest[] } = await request.json();
-
-        if (!Array.isArray(body.checks) || body.checks.length === 0) {
-          return new Response(
-            JSON.stringify({ error: 'checks must be a non-empty array' }),
-            {
-              status: 400,
-              headers: {
-                'Content-Type': 'application/json',
-                ...corsHeaders
-              }
-            }
-          );
-        }
-
-        // Limit batch size to prevent abuse
-        if (body.checks.length > 10) {
-          return new Response(
-            JSON.stringify({ error: 'Maximum 10 checks per batch' }),
-            {
-              status: 400,
-              headers: {
-                'Content-Type': 'application/json',
-                ...corsHeaders
-              }
-            }
-          );
-        }
-
-        // Validate each check in the batch
-        for (const check of body.checks) {
-          if (!check.host || !check.port) {
-            return new Response(
-              JSON.stringify({ error: 'Each check must have host and port' }),
-              { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-            );
-          }
-          if (check.port < 1 || check.port > 65535) {
-            return new Response(
-              JSON.stringify({ error: `Invalid port ${check.port}: must be between 1 and 65535` }),
-              { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-            );
-          }
-          const batchBlocked = isBlockedHost(check.host);
-          if (batchBlocked) {
-            return new Response(
-              JSON.stringify({ error: `Blocked host ${check.host}: ${batchBlocked}` }),
-              { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-            );
-          }
-        }
-
-        // Execute all checks in parallel
-        const results = await Promise.all(
-          body.checks.map(check => check.httpEnabled ? testHttpPort(check) : check.tlsEnabled ? testTlsPort(check) : testTcpPort(check))
-        );
-
-        return new Response(JSON.stringify({ results }), {
-          headers: {
-            'Content-Type': 'application/json',
-            ...corsHeaders
-          },
-        });
-      } catch (error) {
-        return new Response(
-          JSON.stringify({
-            error: error instanceof Error ? error.message : 'Invalid request'
-          }),
-          {
-            status: 400,
-            headers: {
-              'Content-Type': 'application/json',
-              ...corsHeaders
-            }
-          }
-        );
-      }
-    }
-
     // Serve static assets (React app) from the ASSETS binding
     try {
       const assetResponse = await env.ASSETS.fetch(request);
@@ -784,7 +637,7 @@ export default {
       return assetResponse;
     } catch {
       // Fallback if assets aren't available
-      return new Response('Global Health Checks Worker - Use /api/check or /api/batch-check', {
+      return new Response('Global Health Checks Worker - Use POST /api/check', {
         headers: {
           'Content-Type': 'text/plain',
           ...corsHeaders
