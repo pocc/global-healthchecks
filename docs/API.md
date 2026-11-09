@@ -101,6 +101,8 @@ Checks share one Worker invocation, which can only have 6 connections opening at
 
 Returns `{ "lat", "lng", "city", "country" }`. Tries ipwho.is, then freeipapi.com, then reallyfreegeoip.org; returns `503` if all fail. Successful responses are cached for 1 hour.
 
+These providers often refuse requests from Cloudflare's network, so the web UI looks up target locations directly from the browser (ipwho.is, then geojs.io) and only falls back to this endpoint.
+
 ## `GET /api/datacenters`
 
 ```json

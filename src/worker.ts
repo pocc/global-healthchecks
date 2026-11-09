@@ -772,6 +772,9 @@ export default {
           'https://dns.google',
           'https://cloudflare-dns.com',
           'https://one.one.one.one',
+          // Target geolocation from the browser (src/utils/targetGeo.ts)
+          'https://ipwho.is',
+          'https://get.geojs.io',
         ].join(' ');
         const headers = new Headers(assetResponse.headers);
         headers.set('Content-Security-Policy', `connect-src ${cspConnectSrc}`);

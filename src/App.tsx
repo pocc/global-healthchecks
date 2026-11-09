@@ -27,6 +27,7 @@ import {
   REGIONAL_SERVICES, AWS_PLACEMENT, GCP_PLACEMENT, AZURE_PLACEMENT,
   CONTINENTS, getContinent, getCountry, getRegionType,
 } from './utils/regions';
+import { lookupTargetGeo } from './utils/targetGeo';
 
 interface HealthCheckRequest {
   host: string;
@@ -719,38 +720,9 @@ function App() {
 
         lastAsnHostRef.current = hostKey;
 
-        // Geo lookup (always run if we have an IP) - use worker proxy to avoid CORS issues
-        const geoEndpoint = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-          ? `/api/geo-lookup?ip=${encodeURIComponent(ip)}`
-          : `${window.location.origin}/api/geo-lookup?ip=${encodeURIComponent(ip)}`;
-
-        console.log('[geo-lookup] Endpoint:', geoEndpoint);
-        let geoResult: { lat: number; lng: number; city?: string; country?: string } | null = null;
-        try {
-          const geoRes = await fetch(geoEndpoint, { signal: abortController.signal });
-          console.log('[geo-lookup] Response status:', geoRes.status);
-          if (geoRes.ok) {
-            geoResult = await geoRes.json() as { lat: number; lng: number; city?: string; country?: string };
-            console.log('[geo-lookup] Result:', geoResult);
-          } else {
-            const errorData = await geoRes.text();
-            console.log('[geo-lookup] Error response:', errorData);
-          }
-        } catch (err) {
-          console.log('[geo-lookup] Fetch failed:', err);
-        }
-        if (geoResult && (geoResult.lat !== 0 || geoResult.lng !== 0)) {
-          console.log('[geo-lookup] Setting target location:', geoResult);
-          setTargetLocation({
-            lat: geoResult.lat,
-            lng: geoResult.lng,
-            city: geoResult.city || undefined,
-            country: geoResult.country || undefined,
-          });
-        } else {
-          console.log('[geo-lookup] No valid geo result, clearing target location');
-          setTargetLocation(null);
-        }
+        // Geo lookup for the map's target marker and Worker → target packet leg.
+        // Runs in the browser; providers refuse the Worker proxy's requests (issue #1).
+        setTargetLocation(await lookupTargetGeo(ip, abortController.signal));
       } catch (e) {
         if (e instanceof DOMException && e.name === 'AbortError') return;
         // ASN lookup failed -allow the test to proceed

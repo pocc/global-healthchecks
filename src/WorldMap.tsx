@@ -5,6 +5,7 @@ import type { FeatureCollection } from 'geojson';
 import { REGION_COORDINATES } from './regionCoordinates';
 import { getColoCity } from './coloMapping';
 import type { TestResult, HomeLocation, TargetLocation } from './types';
+import { legRgb, FAILED_RGB } from './utils/packetColor';
 
 // Enable verbose animation debugging by adding ?debug to the URL
 const DEBUG = new URLSearchParams(location.search).has('debug');
@@ -706,9 +707,8 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
     /* ── Draw fading completed trails ── */
     trails.forEach(trail => {
       const fade = Math.max(0, 1 - (now - trail.end) / currentTrailFade);
-      const c = trail.failed ? '239,68,68' : trail.rgb;
       trail.legs.forEach((l, i) => {
-        const legC = i === 0 ? '255,255,255' : c;
+        const legC = legRgb(i, trail.legs.length, trail.rgb, trail.failed);
         drawArc(ctx, proj, l.interp, 1, `rgba(${legC},${(0.1 * fade).toFixed(3)})`, 0.5);
       });
     });
@@ -727,7 +727,7 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
       // Check if leg is complete
       if (progress >= 1) {
         // Impact ripple at destination
-        ripples.push({ coord: leg.to, start: now, rgb: pkt.failed ? '239,68,68' : rgb });
+        ripples.push({ coord: leg.to, start: now, rgb: pkt.failed ? FAILED_RGB : rgb });
 
         if (pkt.legIdx < pkt.legs.length - 1) {
           // Advance to next leg
@@ -744,15 +744,14 @@ export default function WorldMap({ results, allRegions, homeLocation, targetLoca
       // Draw already-completed legs as faint ghosting lines
       for (let i = 0; i < pkt.legIdx; i++) {
         const l = pkt.legs[i];
-        const legC = i === 0 ? '255,255,255' : rgb;
+        const legC = legRgb(i, pkt.legs.length, rgb, pkt.failed);
         drawArc(ctx, proj, l.interp, 1, `rgba(${legC},0.12)`, 0.6);
       }
 
       // Current leg
       const curLeg = pkt.legs[pkt.legIdx];
       const curProgress = Math.min(1, (now - pkt.legStart) / curLeg.dur);
-      const isFirst = pkt.legIdx === 0;
-      const pRgb = isFirst ? '255,255,255' : (pkt.failed ? '239,68,68' : rgb);
+      const pRgb = legRgb(pkt.legIdx, pkt.legs.length, rgb, pkt.failed);
 
       // Full arc guideline (very dim)
       drawArc(ctx, proj, curLeg.interp, 1, `rgba(${pRgb},0.05)`, 0.4);
