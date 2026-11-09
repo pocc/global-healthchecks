@@ -5,7 +5,6 @@ Base URL: `https://healthchecks.ross.gg` or any location host `https://<env>.hea
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `/api/check` | POST | One TCP, TLS or HTTP check |
-| `/api/batch-check` | POST | Up to 10 checks in parallel from the same location |
 | `/api/geo` | GET | Caller's location as seen by Cloudflare |
 | `/api/geo-lookup?ip=` | GET | Approximate location of an IP (proxied to public geo-IP services) |
 | `/api/datacenters` | GET | Cloudflare colo codes and cities known to this Worker |
@@ -33,7 +32,7 @@ curl -s -X POST https://healthchecks.ross.gg/api/check \
 
 | Field | Type | Default | Applies to | Notes |
 |---|---|---|---|---|
-| `host` | string | required | all | Hostname, IPv4, or IPv6 **in brackets** (`[2001:db8::1]`). Private/internal ranges rejected. |
+| `host` | string | required | all | Hostname, IPv4, or IPv6 **in brackets** (`[2001:db8::1]`). Private, loopback, link-local, CGNAT, multicast and other reserved ranges are rejected in any notation (e.g. `127.1`, `0x7f.0.0.1`), as are `.localhost`, `.internal`, `.local` and `.home.arpa` names. |
 | `port` | number | required | all | 1–65535 |
 | `timeout` | number (ms) | `5000` | all | TLS/HTTP: per phase. TCP: fallback for `connectTimeout`. |
 | `connectTimeout` | number (ms) | `timeout` | TCP | |
@@ -49,7 +48,7 @@ curl -s -X POST https://healthchecks.ross.gg/api/check \
 | `maxRedirects` | number | `5` | HTTP | |
 | `region` | string | — | all | Echoed back in the result; not used |
 
-Accepted but **ignored** because the Sockets API doesn't support them (see [LIMITATIONS.md](LIMITATIONS.md)): `idleTimeout`, `keepAlive`, `keepAliveInitialDelay`, `minTlsVersion`, `maxTlsVersion`, `ciphers`, `clientCert`, `clientKey`, `caBundlePem`, `ocspStapling`, `pinnedPublicKey`.
+Any other fields are ignored. TLS version, cipher suites, client certificates, custom CAs, pinning, keep-alive and idle timeouts can't be set; see [LIMITATIONS.md](LIMITATIONS.md).
 
 ### Response fields
 
@@ -79,18 +78,6 @@ Accepted but **ignored** because the Sockets API doesn't support them (see [LIMI
 
 Connection failures are **not** HTTP errors: they return 200 with `success: false` and `error`.
 
-## `POST /api/batch-check`
-
-```bash
-curl -s -X POST https://healthchecks.ross.gg/api/batch-check \
-  -H 'Content-Type: application/json' \
-  -d '{"checks":[{"host":"github.com","port":443},{"host":"github.com","port":22}]}'
-```
-
-Body: `{ "checks": [ <check request>, … ] }`, 1–10 items. Returns `{ "results": [ … ] }` in the same order. Results don't include `colo`, `cfRay` or `clientTcpRtt`; read `cf-ray` from the response headers instead.
-
-Checks share one Worker invocation, which can only have 6 connections opening at once, so larger batches queue and later results include the wait. For accurate timings, use one `/api/check` per target. See [LIMITATIONS.md](LIMITATIONS.md#platform).
-
 ## `GET /api/geo`
 
 ```json
@@ -106,7 +93,7 @@ These providers often refuse requests from Cloudflare's network, so the web UI l
 ## `GET /api/datacenters`
 
 ```json
-{ "count": 334, "datacenters": [ { "code": "ACC", "city": "Accra, Ghana" }, … ] }
+{ "count": 352, "datacenters": [ { "code": "ACC", "city": "Accra, Ghana" }, … ] }
 ```
 
 The list comes from the Worker's built-in table and can lag behind Cloudflare's current locations. Cached 24 hours.

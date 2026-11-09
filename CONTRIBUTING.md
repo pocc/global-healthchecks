@@ -8,7 +8,7 @@
 
 ## Local development
 
-Requires Node 20+ (Wrangler needs it).
+Requires Node 22+ (Wrangler needs it).
 
 ```bash
 npm install
@@ -30,7 +30,7 @@ Locally, sockets connect from your machine and placement doesn't apply. Check ti
 Layout:
 
 - `src/**/*.test.tsx`: component and integration tests (Testing Library)
-- `src/test/mocks/handlers.ts`: [MSW](https://mswjs.io/) mocks for `/api/check` and `/api/batch-check`. Add a handler when tests need another endpoint.
+- `src/test/mocks/handlers.ts`: [MSW](https://mswjs.io/) mocks for `/api/check`. Add a handler when tests need another endpoint.
 - `src/test/utils/testUtils.tsx`: custom `render` helper
 - `e2e/`: browser tests, excluded from Vitest
 

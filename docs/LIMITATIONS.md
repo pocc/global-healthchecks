@@ -10,18 +10,18 @@ Constraints of the Cloudflare Workers runtime and the `cloudflare:sockets` API.
 | ICMP: ping, traceroute, MTU discovery | No raw sockets |
 | Unbracketed IPv6 literals | `2001:db8::1` fails; write `[2001:db8::1]` |
 | Targets on Cloudflare's network (AS13335) | Cloudflare blocks sockets to its own IP ranges; you get `proxy request failed …`. The UI detects this and asks for the origin IP. |
-| Private/internal targets | RFC 1918, loopback, link-local, CGNAT, `.internal` and `.localhost` are rejected by the Worker; Cloudflare also blocks localhost and private IPs. |
-| Socket options (`TCP_NODELAY`, keep-alive, idle timeout) | Not exposed by the API; these request fields are ignored. |
+| Private/internal targets | RFC 1918, loopback, link-local, CGNAT, multicast and other reserved ranges (in any IPv4/IPv6 notation), plus `.localhost`, `.internal`, `.local` and `.home.arpa` names, are rejected by the Worker; Cloudflare also blocks localhost and private IPs. |
+| Socket options (`TCP_NODELAY`, keep-alive, idle timeout) | Not exposed by the API. |
 | Choosing the exact data center | Placement picks it; read `cf-placement` (see [METHODOLOGY.md](METHODOLOGY.md#verifying-where-a-check-ran)). |
 
 ## TLS
 
 | Can't do | Why |
 |---|---|
-| Pick TLS version or cipher suite | `connect()` has no such options; `minTlsVersion`, `maxTlsVersion` and `ciphers` are ignored. |
+| Pick TLS version or cipher suite | `connect()` has no such options. |
 | Report negotiated version or cipher | Not exposed. |
-| mTLS client certificates | No client certificate option; `clientCert` and `clientKey` are ignored. |
-| Custom CA bundle, certificate pinning | No such options; `caBundlePem` and `pinnedPublicKey` are ignored. |
+| mTLS client certificates | `connect()` has no client certificate option. |
+| Custom CA bundle, certificate pinning | `connect()` has no such options. |
 | Test hosts with invalid certificates | Expired, self-signed and other invalid certificates fail the TLS phase with a generic `proxy request failed …` error. |
 | OCSP stapling, session resumption control | Not exposed. |
 | SNI different from `host` | SNI always equals `host`; `tlsServername` only changes the HTTP `Host` header. |
@@ -38,6 +38,5 @@ Constraints of the Cloudflare Workers runtime and the `cloudflare:sockets` API.
 
 ## Platform
 
-- **6 connections opening at once:** each Worker invocation can have at most six connections being set up at once; extra ones queue. A TLS or HTTP check uses two sockets, so `/api/batch-check` with several TLS checks queues, and later results include the wait. Use one `/api/check` per target for accurate timings.
-- **Batch size:** at most 10 checks per `/api/batch-check` request.
+- **One target per request:** each `/api/check` checks one host and port; there is no batch endpoint.
 - **No shared state:** Workers in different data centers share nothing; the UI collects results in your browser.
