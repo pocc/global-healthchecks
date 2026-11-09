@@ -34,22 +34,11 @@ interface HealthCheckRequest {
   port: number;
   timeout?: number;
   connectTimeout?: number; // TCP connect timeout (ms)
-  idleTimeout?: number; // socket idle timeout (ms)
-  keepAlive?: boolean; // enable TCP keep-alive
-  keepAliveInitialDelay?: number; // keep-alive initial delay (ms)
   retries?: number; // number of retry attempts
   retryBackoff?: boolean; // use exponential backoff
   region?: string;
   tlsEnabled?: boolean;
   tlsServername?: string;
-  minTlsVersion?: string;
-  maxTlsVersion?: string;
-  ciphers?: string;
-  clientCert?: string;
-  clientKey?: string;
-  caBundlePem?: string;
-  ocspStapling?: boolean;
-  pinnedPublicKey?: string;
   httpEnabled?: boolean;
   httpMethod?: string;
   httpPath?: string;
@@ -57,19 +46,6 @@ interface HealthCheckRequest {
   followRedirects?: boolean;
   maxRedirects?: number;
 }
-
-type TlsVersion = '' | 'TLSv1' | 'TLSv1.1' | 'TLSv1.2' | 'TLSv1.3';
-
-const TLS_VERSIONS: { value: TlsVersion; label: string }[] = [
-  { value: '', label: 'Auto' },
-  { value: 'TLSv1', label: 'TLS 1.0' },
-  { value: 'TLSv1.1', label: 'TLS 1.1' },
-  { value: 'TLSv1.2', label: 'TLS 1.2' },
-  { value: 'TLSv1.3', label: 'TLS 1.3' },
-];
-
-// TLS version ordering for range comparisons
-const TLS_VER_ORDER: Record<string, number> = { 'TLSv1': 1, 'TLSv1.1': 2, 'TLSv1.2': 3, 'TLSv1.3': 4 };
 
 // Well-known TCP port to protocol name mapping (sourced from Wikipedia)
 const WELL_KNOWN_PORTS: Record<number, string> = {
@@ -244,51 +220,7 @@ async function dohResolve(
 // NS lookup always uses Google JSON API (wire-format NS parsing requires name decompression)
 const NS_DOH = 'https://dns.google/resolve';
 
-// Complete list of OpenSSL TLS cipher suites with version compatibility
-// minVer/maxVer use TLS_VER_ORDER: TLSv1=1, TLSv1.1=2, TLSv1.2=3, TLSv1.3=4
-const TLS_CIPHERS: { name: string; group: string; minVer: number; maxVer: number }[] = [
-  // TLS 1.3 Only -exclusive cipher suites, not interchangeable with 1.2
-  { name: 'TLS_AES_128_GCM_SHA256', group: 'TLS 1.3 Only', minVer: 4, maxVer: 4 },
-  { name: 'TLS_AES_256_GCM_SHA384', group: 'TLS 1.3 Only', minVer: 4, maxVer: 4 },
-  { name: 'TLS_CHACHA20_POLY1305_SHA256', group: 'TLS 1.3 Only', minVer: 4, maxVer: 4 },
-  // ECDHE + AEAD (TLS 1.2 only -PFS + authenticated encryption)
-  { name: 'ECDHE-ECDSA-AES128-GCM-SHA256', group: 'ECDHE + AEAD', minVer: 3, maxVer: 3 },
-  { name: 'ECDHE-RSA-AES128-GCM-SHA256', group: 'ECDHE + AEAD', minVer: 3, maxVer: 3 },
-  { name: 'ECDHE-ECDSA-AES256-GCM-SHA384', group: 'ECDHE + AEAD', minVer: 3, maxVer: 3 },
-  { name: 'ECDHE-RSA-AES256-GCM-SHA384', group: 'ECDHE + AEAD', minVer: 3, maxVer: 3 },
-  { name: 'ECDHE-ECDSA-CHACHA20-POLY1305', group: 'ECDHE + AEAD', minVer: 3, maxVer: 3 },
-  { name: 'ECDHE-RSA-CHACHA20-POLY1305', group: 'ECDHE + AEAD', minVer: 3, maxVer: 3 },
-  // DHE + AEAD (TLS 1.2 only -PFS + authenticated encryption)
-  { name: 'DHE-RSA-AES128-GCM-SHA256', group: 'DHE + AEAD', minVer: 3, maxVer: 3 },
-  { name: 'DHE-RSA-AES256-GCM-SHA384', group: 'DHE + AEAD', minVer: 3, maxVer: 3 },
-  { name: 'DHE-RSA-CHACHA20-POLY1305', group: 'DHE + AEAD', minVer: 3, maxVer: 3 },
-  // ECDHE + CBC with SHA-2 PRF (TLS 1.2 only)
-  { name: 'ECDHE-ECDSA-AES128-SHA256', group: 'ECDHE + CBC', minVer: 3, maxVer: 3 },
-  { name: 'ECDHE-RSA-AES128-SHA256', group: 'ECDHE + CBC', minVer: 3, maxVer: 3 },
-  { name: 'ECDHE-ECDSA-AES256-SHA384', group: 'ECDHE + CBC', minVer: 3, maxVer: 3 },
-  { name: 'ECDHE-RSA-AES256-SHA384', group: 'ECDHE + CBC', minVer: 3, maxVer: 3 },
-  // Legacy ECDHE -SHA-1 (TLS 1.0–1.2)
-  { name: 'ECDHE-ECDSA-AES128-SHA', group: 'Legacy ECDHE', minVer: 1, maxVer: 3 },
-  { name: 'ECDHE-RSA-AES128-SHA', group: 'Legacy ECDHE', minVer: 1, maxVer: 3 },
-  { name: 'ECDHE-ECDSA-AES256-SHA', group: 'Legacy ECDHE', minVer: 1, maxVer: 3 },
-  { name: 'ECDHE-RSA-AES256-SHA', group: 'Legacy ECDHE', minVer: 1, maxVer: 3 },
-  // Legacy DHE -SHA-2 are TLS 1.2 only, SHA-1 are TLS 1.0–1.2
-  { name: 'DHE-RSA-AES128-SHA256', group: 'Legacy DHE', minVer: 3, maxVer: 3 },
-  { name: 'DHE-RSA-AES256-SHA256', group: 'Legacy DHE', minVer: 3, maxVer: 3 },
-  { name: 'DHE-RSA-AES128-SHA', group: 'Legacy DHE', minVer: 1, maxVer: 3 },
-  { name: 'DHE-RSA-AES256-SHA', group: 'Legacy DHE', minVer: 1, maxVer: 3 },
-  // RSA (No PFS) -static RSA key exchange, TLS 1.2 only
-  { name: 'AES128-GCM-SHA256', group: 'RSA (No PFS)', minVer: 3, maxVer: 3 },
-  { name: 'AES256-GCM-SHA384', group: 'RSA (No PFS)', minVer: 3, maxVer: 3 },
-  { name: 'AES128-SHA256', group: 'RSA (No PFS)', minVer: 3, maxVer: 3 },
-  { name: 'AES256-SHA256', group: 'RSA (No PFS)', minVer: 3, maxVer: 3 },
-  // Legacy RSA -static RSA, SHA-1 (TLS 1.0–1.2)
-  { name: 'AES128-SHA', group: 'Legacy RSA', minVer: 1, maxVer: 3 },
-  { name: 'AES256-SHA', group: 'Legacy RSA', minVer: 1, maxVer: 3 },
-  // Insecure -3DES, vulnerable to Sweet32 (TLS 1.0–1.2)
-  { name: 'DES-CBC3-SHA', group: 'Insecure', minVer: 1, maxVer: 3 },
-];
-
+const HTTP_METHODS = ['GET', 'HEAD', 'POST', 'OPTIONS'];
 
 /** Reverse IPv4 octets for Cymru DNS lookup: "1.2.3.4" → "4.3.2.1" */
 const reverseIPv4 = (ip: string): string => ip.split('.').reverse().join('.');
@@ -379,13 +311,10 @@ function App() {
   // L4 TCP options
   const [connectTimeout, setConnectTimeout] = useState(params.get('connectTimeout') || '5000');
   const [totalTimeout, setTotalTimeout] = useState(params.get('totalTimeout') || '10000');
-  const [idleTimeout, setIdleTimeout] = useState(params.get('idleTimeout') || '');
-  const [tcpKeepAlive, setTcpKeepAlive] = useState(params.get('keepAlive') === '1');
-  const [keepAliveDelay, setKeepAliveDelay] = useState(params.get('keepAliveDelay') || '1000');
   const [retryCount, setRetryCount] = useState(params.get('retries') || '0');
   const [retryBackoff, setRetryBackoff] = useState(params.get('backoff') === '1');
   const [tcpAdvancedOpen, setTcpAdvancedOpen] = useState(
-    !!params.get('connectTimeout') || !!params.get('idleTimeout') || params.get('keepAlive') === '1' || (parseInt(params.get('retries') || '0') > 0)
+    !!params.get('connectTimeout') || (parseInt(params.get('retries') || '0') > 0)
   );
 
   // About modal
@@ -397,49 +326,18 @@ function App() {
   const [continentFilter, setContinentFilter] = useState<Continent | null>(null);
   const [countryFilter, setCountryFilter] = useState<string | null>(null);
 
-  // TLS options (Layer 7 only)
+  // HTTP Host header (Full Stack mode); TLS SNI always uses the target host
   const [tlsServername, setTlsServername] = useState(params.get('sni') || host.trim());
-  const [minTlsVersion, setMinTlsVersion] = useState<TlsVersion>((params.get('minTls') as TlsVersion) || '');
-  const [maxTlsVersion, setMaxTlsVersion] = useState<TlsVersion>((params.get('maxTls') as TlsVersion) || '');
-  const [selectedCiphers, setSelectedCiphers] = useState<Set<string>>(() => {
-    const c = params.get('ciphers');
-    return c ? new Set(c.split(',')) : new Set();
-  });
-  const [ciphersOpen, setCiphersOpen] = useState(true);
-  const [cipherFilter, setCipherFilter] = useState('');
-
-  // TLS Advanced options
-  const [tlsAdvancedOpen, setTlsAdvancedOpen] = useState(
-    !!params.get('ciphers') || !!params.get('ocsp') || !!params.get('pin')
-  );
-  const [clientCert, setClientCert] = useState('');
-  const [clientKey, setClientKey] = useState('');
-  const [caBundlePem, setCaBundlePem] = useState('');
-  const [ocspStapling, setOcspStapling] = useState(params.get('ocsp') === '1');
-  const [pinnedPublicKey, setPinnedPublicKey] = useState(params.get('pin') || '');
-
-  // Filter ciphers to only those compatible with the selected TLS version range
-  const userMin = minTlsVersion ? TLS_VER_ORDER[minTlsVersion] : 1;
-  const userMax = maxTlsVersion ? TLS_VER_ORDER[maxTlsVersion] : 4;
-  const availableCiphers = TLS_CIPHERS.filter(c => c.maxVer >= userMin && c.minVer <= userMax);
-
-  // Clear out-of-range cipher selections when version changes
-  useEffect(() => {
-    if (selectedCiphers.size === 0) return;
-    const validNames = new Set(availableCiphers.map(c => c.name));
-    const filtered = new Set([...selectedCiphers].filter(name => validNames.has(name)));
-    if (filtered.size !== selectedCiphers.size) {
-      setSelectedCiphers(filtered.size === availableCiphers.length ? new Set() : filtered);
-    }
-  }, [minTlsVersion, maxTlsVersion]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // DNS options (Full Stack mode)
   const [dohProvider, setDohProvider] = useState(params.get('doh') || 'https://cloudflare-dns.com/dns-query');
   const [dnsRecordType, setDnsRecordType] = useState<'A' | 'AAAA'>((params.get('dns') as 'A' | 'AAAA') || 'A');
 
   // HTTP options -always active in Full Stack mode
-  const [httpMethod, setHttpMethod] = useState(params.get('method') || 'GET');
-  const [customHttpMethod, setCustomHttpMethod] = useState('PROPFIND');
+  // The Worker only sends these methods (src/worker.ts ALLOWED_METHODS)
+  const [httpMethod, setHttpMethod] = useState(() => {
+    const m = (params.get('method') || 'GET').toUpperCase();
+    return HTTP_METHODS.includes(m) ? m : 'GET';
+  });
   const [httpPath, setHttpPath] = useState(params.get('path') || '/');
   const [expectedStatus, setExpectedStatus] = useState(params.get('expect') || '200');
   const [httpHeadersRaw, setHttpHeadersRaw] = useState(() => {
@@ -640,7 +538,7 @@ function App() {
             if (cached.asn === CLOUDFLARE_ASN) {
               setCloudflareIp(ip);
               setDnsWarning(
-                `This worker will get Error 1014 connecting to ASN13335.`
+                `Cloudflare blocks Workers from connecting to its own IPs (AS13335). Enter the origin IP to test it.`
               );
               setIsCloudflareDetected(true);
               setResolvedIp('');
@@ -671,7 +569,7 @@ function App() {
                 if (isHostname) setCachedAsn(hostVal, asnNumber);
                 setCloudflareIp(ip);
                 setDnsWarning(
-                  `This worker will get Error 1014 connecting to ASN13335.`
+                  `Cloudflare blocks Workers from connecting to its own IPs (AS13335). Enter the origin IP to test it.`
                 );
                 setIsCloudflareDetected(true);
                 setResolvedIp('');
@@ -829,7 +727,7 @@ function App() {
     setIsRunning(false);
     setResults([]);
     setStartTime(null);
-  }, [host, port, layer, dohProvider, dnsRecordType, minTlsVersion, maxTlsVersion, selectedCiphers, tlsServername, httpMethod, httpPath, expectedStatus, httpHeadersRaw, followRedirects, maxRedirects, httpAuthType, httpAuthUser, httpAuthPass, clientCert, clientKey, caBundlePem, ocspStapling, pinnedPublicKey, connectTimeout, totalTimeout, idleTimeout, tcpKeepAlive, keepAliveDelay, retryCount, retryBackoff]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [host, port, layer, dohProvider, dnsRecordType, tlsServername, httpMethod, httpPath, expectedStatus, httpHeadersRaw, followRedirects, maxRedirects, httpAuthType, httpAuthUser, httpAuthPass, connectTimeout, totalTimeout, retryCount, retryBackoff]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync config to URL query string (only non-default values)
   useEffect(() => {
@@ -845,9 +743,6 @@ function App() {
     // L4 TCP controls
     set('connectTimeout', connectTimeout, '5000');
     set('totalTimeout', totalTimeout, '10000');
-    if (idleTimeout) p.set('idleTimeout', idleTimeout); else p.delete('idleTimeout');
-    if (tcpKeepAlive) { p.set('keepAlive', '1'); set('keepAliveDelay', keepAliveDelay, '1000'); }
-    else { p.delete('keepAlive'); p.delete('keepAliveDelay'); }
     if (parseInt(retryCount) > 0) { p.set('retries', retryCount); if (retryBackoff) p.set('backoff', '1'); else p.delete('backoff'); }
     else { p.delete('retries'); p.delete('backoff'); }
     // L7 config
@@ -855,10 +750,6 @@ function App() {
     set('dns', dnsRecordType, 'A');
     if (tlsServername !== host.trim()) p.set('sni', tlsServername);
     else p.delete('sni');
-    set('minTls', minTlsVersion, '');
-    set('maxTls', maxTlsVersion, '');
-    if (selectedCiphers.size > 0) p.set('ciphers', [...selectedCiphers].join(','));
-    else p.delete('ciphers');
     set('method', httpMethod, 'GET');
     set('path', httpPath, '/');
     set('expect', expectedStatus, '200');
@@ -869,10 +760,8 @@ function App() {
     else { p.delete('redirects'); p.delete('maxRedirects'); }
     if (httpAuthType !== 'none') { p.set('auth', httpAuthType); if (httpAuthUser) p.set('user', httpAuthUser); else p.delete('user'); }
     else { p.delete('auth'); p.delete('user'); }
-    if (ocspStapling) p.set('ocsp', '1'); else p.delete('ocsp');
-    if (pinnedPublicKey) p.set('pin', pinnedPublicKey); else p.delete('pin');
     window.history.replaceState(null, '', url.toString());
-  }, [host, port, layer, connectTimeout, totalTimeout, idleTimeout, tcpKeepAlive, keepAliveDelay, retryCount, retryBackoff, dohProvider, dnsRecordType, tlsServername, minTlsVersion, maxTlsVersion, selectedCiphers, httpMethod, httpPath, expectedStatus, httpHeadersRaw, followRedirects, maxRedirects, httpAuthType, httpAuthUser, ocspStapling, pinnedPublicKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [host, port, layer, connectTimeout, totalTimeout, retryCount, retryBackoff, dohProvider, dnsRecordType, tlsServername, httpMethod, httpPath, expectedStatus, httpHeadersRaw, followRedirects, maxRedirects, httpAuthType, httpAuthUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getEgressColo = (result: TestResult): { colo: string; city: string; raw?: string } => {
     const regionType = getRegionType(result.region);
@@ -983,24 +872,14 @@ function App() {
         port: parseInt(port),
         timeout: parseInt(totalTimeout) || 10000,
         connectTimeout: parseInt(connectTimeout) || 5000,
-        ...(idleTimeout && { idleTimeout: parseInt(idleTimeout) }),
-        ...(tcpKeepAlive && { keepAlive: true, keepAliveInitialDelay: parseInt(keepAliveDelay) || 1000 }),
         ...(parseInt(retryCount) > 0 && { retries: parseInt(retryCount), retryBackoff }),
         region: regionCode,
         ...(layer === 'l7' && {
           tlsEnabled: true,
           // When using a CF-bypass IP override, pass the original hostname as tlsServername
-          // so the worker can use it for the HTTP Host header and SNI (where supported).
+          // so the worker sends it as the HTTP Host header.
           ...(isCloudflareDetected && manualIpOverride && !tlsServername && { tlsServername: host.trim() }),
           ...(tlsServername && { tlsServername }),
-          ...(minTlsVersion && { minTlsVersion }),
-          ...(maxTlsVersion && { maxTlsVersion }),
-          ...(selectedCiphers.size > 0 && { ciphers: [...selectedCiphers].join(':') }),
-          ...(clientCert && { clientCert }),
-          ...(clientKey && { clientKey }),
-          ...(caBundlePem && { caBundlePem }),
-          ...(ocspStapling && { ocspStapling: true }),
-          ...(pinnedPublicKey && { pinnedPublicKey }),
           httpEnabled: true,
           httpMethod,
           httpPath,
@@ -1418,16 +1297,16 @@ function App() {
                         >
                           Cloudflare IP
                         </a>
-                        {' '}{cloudflareIp}. This worker will get{' '}
+                        {' '}{cloudflareIp}.{' '}
                         <a
-                          href="https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-1xxx-errors/error-1014/"
+                          href="https://developers.cloudflare.com/workers/runtime-apis/tcp-sockets/"
                           target="_blank"
                           rel="noopener noreferrer"
                           className="underline hover:text-amber-300"
                         >
-                          Error 1014
+                          Cloudflare blocks Workers
                         </a>
-                        {' '}connecting to ASN13335.
+                        {' '}from connecting to its own IPs (AS13335). Enter the origin IP to test it.
                       </>
                     ) : (
                       dnsWarning
@@ -1537,7 +1416,7 @@ function App() {
             >
               <ChevronDown className={`w-4 h-4 transition-transform ${tcpAdvancedOpen ? 'rotate-180' : ''}`} />
               Advanced Connection Configuration
-              {(connectTimeout !== '5000' || totalTimeout !== '10000' || idleTimeout || tcpKeepAlive || parseInt(retryCount) > 0) && (
+              {(connectTimeout !== '5000' || totalTimeout !== '10000' || parseInt(retryCount) > 0) && (
                 <span className="text-[10px] text-primary">(configured)</span>
               )}
             </button>
@@ -1571,50 +1450,6 @@ function App() {
                       />
                       <p className="text-[10px] text-slate-500 mt-1">Total operation timeout (like curl -m/--max-time)</p>
                     </div>
-                  </div>
-
-                  {/* Idle Timeout */}
-                  <div>
-                    <label htmlFor="idleTimeout" className="block text-xs font-medium text-slate-400 mb-1">Idle Timeout (ms)</label>
-                    <input
-                      id="idleTimeout"
-                      type="text"
-                      inputMode="numeric"
-                      value={idleTimeout}
-                      onChange={(e) => setIdleTimeout(e.target.value.replace(/\D/g, ''))}
-                      placeholder="Not set"
-                      className="w-full px-3 py-2 bg-slate-900/50 border border-slate-600 rounded-lg text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary placeholder-slate-500"
-                    />
-                    <p className="text-[10px] text-slate-500 mt-1">Emit timeout if socket is idle for this duration (socket.setTimeout)</p>
-                  </div>
-
-                  {/* TCP Keep-Alive */}
-                  <div className="border-t border-slate-700 pt-3">
-                    <div className="flex items-center gap-3">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={tcpKeepAlive}
-                          onChange={(e) => setTcpKeepAlive(e.target.checked)}
-                          className="rounded border-slate-600 bg-slate-800 text-primary focus:ring-primary focus:ring-offset-0"
-                        />
-                        <span className="text-xs text-slate-300">TCP Keep-Alive</span>
-                      </label>
-                      {tcpKeepAlive && (
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] text-slate-500">initial delay</span>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            value={keepAliveDelay}
-                            onChange={(e) => setKeepAliveDelay(e.target.value.replace(/\D/g, ''))}
-                            className="w-20 px-2 py-0.5 bg-slate-900/50 border border-slate-600 rounded text-white text-xs font-mono text-center focus:outline-none focus:ring-1 focus:ring-primary"
-                          />
-                          <span className="text-[10px] text-slate-500">ms</span>
-                        </div>
-                      )}
-                    </div>
-                    <p className="text-[10px] text-slate-500 mt-1">Enable TCP keep-alive probes (socket.setKeepAlive). CF infrastructure has its own 30s keep-alive interval.</p>
                   </div>
 
                   {/* Retry Logic */}
@@ -1758,9 +1593,14 @@ function App() {
                 TLS Configuration
               </h3>
 
-              {/* TLS Servername (SNI) */}
+              <p className="text-[10px] text-slate-500 -mt-2">
+                TLS version, cipher suites, client certificates, custom CAs and SNI can't be set: the Workers
+                Sockets API doesn't expose them. SNI always matches the target host.
+              </p>
+
+              {/* HTTP Host header */}
               <div>
-                <label htmlFor="tlsServername" className="block text-xs font-medium text-slate-400 mb-1">Servername (SNI)</label>
+                <label htmlFor="tlsServername" className="block text-xs font-medium text-slate-400 mb-1">Host Header</label>
                 <input
                   id="tlsServername"
                   type="text"
@@ -1769,192 +1609,7 @@ function App() {
                   placeholder="e.g. example.com"
                   className="w-full px-3 py-2 bg-slate-900/50 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary placeholder-slate-500"
                 />
-                <p className="text-[10px] text-slate-500 mt-1">Server Name Indication sent during TLS handshake. Auto-populated from hostname.</p>
-              </div>
-
-              {/* Min / Max TLS Version */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="minTls" className="block text-xs font-medium text-slate-400 mb-1">Min TLS Version</label>
-                  <select
-                    id="minTls"
-                    value={minTlsVersion}
-                    onChange={(e) => setMinTlsVersion(e.target.value as TlsVersion)}
-                    className="w-full px-3 py-2 bg-slate-900/50 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    {TLS_VERSIONS.map((v) => (
-                      <option key={v.value} value={v.value}>{v.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label htmlFor="maxTls" className="block text-xs font-medium text-slate-400 mb-1">Max TLS Version</label>
-                  <select
-                    id="maxTls"
-                    value={maxTlsVersion}
-                    onChange={(e) => setMaxTlsVersion(e.target.value as TlsVersion)}
-                    className="w-full px-3 py-2 bg-slate-900/50 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    {TLS_VERSIONS.map((v) => (
-                      <option key={v.value} value={v.value}>{v.label}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* TLS Advanced */}
-              <div>
-                <button
-                  onClick={() => setTlsAdvancedOpen(!tlsAdvancedOpen)}
-                  className="flex items-center gap-2 text-xs font-medium text-slate-400 hover:text-slate-300 transition-colors"
-                >
-                  <ChevronDown className={`w-3.5 h-3.5 transition-transform ${tlsAdvancedOpen ? 'rotate-180' : ''}`} />
-                  Advanced
-                  {(selectedCiphers.size > 0 || clientCert || caBundlePem || ocspStapling || pinnedPublicKey) && (
-                    <span className="text-[10px] text-primary">(configured)</span>
-                  )}
-                </button>
-                {tlsAdvancedOpen && (
-                  <div className="mt-2 border border-slate-700 rounded-lg bg-slate-900/50 p-3 space-y-4">
-                    {/* Cipher Suites */}
-                    <div>
-                      <button
-                        onClick={() => setCiphersOpen(!ciphersOpen)}
-                        className="flex items-center gap-2 text-xs font-medium text-slate-400 hover:text-slate-300 transition-colors"
-                      >
-                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${ciphersOpen ? 'rotate-180' : ''}`} />
-                        Cipher Suites {selectedCiphers.size > 0 ? `(${selectedCiphers.size}/${availableCiphers.length} selected)` : `(all ${availableCiphers.length} -- default)`}
-                      </button>
-                      {ciphersOpen && (
-                        <div className="mt-2 border border-slate-700 rounded-lg bg-slate-900/50 p-3">
-                          <div className="flex gap-2 mb-3 pb-2 border-b border-slate-700 flex-wrap items-center">
-                            <button onClick={() => setSelectedCiphers(new Set())} className="text-xs text-slate-400 hover:text-white px-2 py-0.5 rounded bg-slate-800">All (default)</button>
-                            <button onClick={() => setSelectedCiphers(new Set(availableCiphers.filter(c => c.group === 'ECDHE + AEAD' || c.group === 'TLS 1.3 Only').map(c => c.name)))} className="text-xs text-slate-400 hover:text-white px-2 py-0.5 rounded bg-slate-800">Modern Only</button>
-                            <input
-                              type="text"
-                              value={cipherFilter}
-                              onChange={(e) => setCipherFilter(e.target.value)}
-                              placeholder="Filter ciphers..."
-                              className="ml-auto px-2 py-0.5 bg-slate-900/50 border border-slate-600 rounded text-white text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary placeholder-slate-500 w-44"
-                            />
-                          </div>
-                          {(() => {
-                            const availableNames = new Set(availableCiphers.map(c => c.name));
-                            const filterLower = cipherFilter.toLowerCase();
-                            const groups: { name: string; ciphers: typeof TLS_CIPHERS }[] = [];
-                            let currentGroupName = '';
-                            for (const cipher of TLS_CIPHERS) {
-                              if (cipherFilter && !cipher.name.toLowerCase().includes(filterLower) && !cipher.group.toLowerCase().includes(filterLower)) continue;
-                              if (cipher.group !== currentGroupName) {
-                                currentGroupName = cipher.group;
-                                groups.push({ name: cipher.group, ciphers: [] });
-                              }
-                              groups[groups.length - 1].ciphers.push(cipher);
-                            }
-                            return (
-                              <div style={{ columns: 3, columnGap: '1rem' }}>
-                                {groups.map((group) => (
-                                  <div key={group.name} className="mb-2" style={{ breakInside: 'avoid' }}>
-                                    <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1 px-1">{group.name}</div>
-                                    {group.ciphers.map((cipher) => {
-                                      const isAvailable = availableNames.has(cipher.name);
-                                      return (
-                                        <label key={cipher.name} className={`flex items-center gap-1.5 px-1 py-0.5 rounded ${isAvailable ? 'hover:bg-slate-800/50 cursor-pointer' : 'opacity-40 cursor-not-allowed'}`}>
-                                          <input
-                                            type="checkbox"
-                                            disabled={!isAvailable}
-                                            checked={isAvailable && (selectedCiphers.size === 0 || selectedCiphers.has(cipher.name))}
-                                            onChange={(e) => {
-                                              const next = new Set(selectedCiphers.size === 0 ? availableCiphers.map(c => c.name) : selectedCiphers);
-                                              if (e.target.checked) next.add(cipher.name);
-                                              else next.delete(cipher.name);
-                                              if (next.size === availableCiphers.length) setSelectedCiphers(new Set());
-                                              else setSelectedCiphers(next);
-                                            }}
-                                            className="rounded border-slate-600 bg-slate-800 text-primary focus:ring-primary focus:ring-offset-0 disabled:opacity-50 shrink-0"
-                                          />
-                                          <span className={`text-xs font-mono truncate ${isAvailable ? 'text-slate-300' : 'text-slate-600 line-through'}`}>{cipher.name}</span>
-                                        </label>
-                                      );
-                                    })}
-                                  </div>
-                                ))}
-                              </div>
-                            );
-                          })()}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Mutual TLS (mTLS) */}
-                    <div className="border-t border-slate-700 pt-3">
-                      <div className="text-xs font-medium text-slate-400 mb-2">Mutual TLS (mTLS)</div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-[10px] text-slate-500 mb-0.5">Client Certificate (PEM)</label>
-                          <textarea
-                            value={clientCert}
-                            onChange={(e) => setClientCert(e.target.value)}
-                            placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
-                            rows={3}
-                            className="w-full px-2 py-1.5 bg-slate-900/50 border border-slate-600 rounded text-white text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary placeholder-slate-600 resize-y"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] text-slate-500 mb-0.5">Private Key (PEM)</label>
-                          <textarea
-                            value={clientKey}
-                            onChange={(e) => setClientKey(e.target.value)}
-                            placeholder="-----BEGIN PRIVATE KEY-----&#10;...&#10;-----END PRIVATE KEY-----"
-                            rows={3}
-                            className="w-full px-2 py-1.5 bg-slate-900/50 border border-slate-600 rounded text-white text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary placeholder-slate-600 resize-y"
-                          />
-                        </div>
-                      </div>
-                      <p className="text-[10px] text-slate-500 mt-1">Authenticate the Worker to the origin (like curl --cert / --key)</p>
-                    </div>
-
-                    {/* Custom Trust Store */}
-                    <div className="border-t border-slate-700 pt-3">
-                      <div className="text-xs font-medium text-slate-400 mb-2">Custom Trust Store</div>
-                      <textarea
-                        value={caBundlePem}
-                        onChange={(e) => setCaBundlePem(e.target.value)}
-                        placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
-                        rows={3}
-                        className="w-full px-2 py-1.5 bg-slate-900/50 border border-slate-600 rounded text-white text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary placeholder-slate-600 resize-y"
-                      />
-                      <p className="text-[10px] text-slate-500 mt-1">CA bundle for verifying private/internal CAs (like curl --cacert)</p>
-                    </div>
-
-                    {/* OCSP Stapling + Certificate Pinning */}
-                    <div className="border-t border-slate-700 pt-3 space-y-3">
-                      <div>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={ocspStapling}
-                            onChange={(e) => setOcspStapling(e.target.checked)}
-                            className="rounded border-slate-600 bg-slate-800 text-primary focus:ring-primary focus:ring-offset-0"
-                          />
-                          <span className="text-xs text-slate-300">Request OCSP Stapling</span>
-                        </label>
-                        <p className="text-[10px] text-slate-500 mt-1 ml-6">Verify certificate revocation status (like curl --cert-status)</p>
-                      </div>
-                      <div>
-                        <label className="block text-[10px] text-slate-500 mb-0.5">Public Key Pin (SHA-256)</label>
-                        <input
-                          type="text"
-                          value={pinnedPublicKey}
-                          onChange={(e) => setPinnedPublicKey(e.target.value)}
-                          placeholder="sha256//YhKJG3T6+...="
-                          className="w-full px-2 py-1.5 bg-slate-900/50 border border-slate-600 rounded text-white text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary placeholder-slate-500"
-                        />
-                        <p className="text-[10px] text-slate-500 mt-1">Pin against a specific public key hash (like curl --pinnedpubkey)</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
+                <p className="text-[10px] text-slate-500 mt-1">Sent as the HTTP Host header. Auto-populated from hostname; set it when testing an origin by IP.</p>
               </div>
 
               {/* HTTP Configuration -always active in Full Stack mode */}
@@ -1969,33 +1624,12 @@ function App() {
                       <label htmlFor="httpMethod" className="block text-xs font-medium text-slate-400 mb-1">Method</label>
                       <select
                         id="httpMethod"
-                        value={['GET','HEAD','POST','PUT','DELETE','CONNECT','OPTIONS','TRACE','PATCH'].includes(httpMethod) ? httpMethod : '_custom'}
-                        onChange={(e) => {
-                          if (e.target.value === '_custom') setHttpMethod(customHttpMethod);
-                          else setHttpMethod(e.target.value);
-                        }}
+                        value={httpMethod}
+                        onChange={(e) => setHttpMethod(e.target.value)}
                         className="w-full px-3 py-2 bg-slate-900/50 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                       >
-                        <option value="GET">GET</option>
-                        <option value="HEAD">HEAD</option>
-                        <option value="POST">POST</option>
-                        <option value="PUT">PUT</option>
-                        <option value="DELETE">DELETE</option>
-                        <option value="CONNECT">CONNECT</option>
-                        <option value="OPTIONS">OPTIONS</option>
-                        <option value="TRACE">TRACE</option>
-                        <option value="PATCH">PATCH</option>
-                        <option value="_custom">METHOD TO THE MADNESS -- custom method</option>
+                        {HTTP_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
                       </select>
-                      {!['GET','HEAD','POST','PUT','DELETE','CONNECT','OPTIONS','TRACE','PATCH'].includes(httpMethod) && (
-                        <input
-                          type="text"
-                          value={customHttpMethod}
-                          onChange={(e) => { const v = e.target.value.toUpperCase(); setCustomHttpMethod(v); setHttpMethod(v); }}
-                          placeholder="PROPFIND"
-                          className="w-full mt-2 px-3 py-2 bg-slate-900/50 border border-slate-600 rounded-lg text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary placeholder-slate-500"
-                        />
-                      )}
                     </div>
                     <div>
                       <label htmlFor="httpPath" className="block text-xs font-medium text-slate-400 mb-1">Path</label>
