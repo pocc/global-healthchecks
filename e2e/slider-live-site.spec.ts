@@ -104,9 +104,18 @@ function analyzeResult(result: SpeedTestResult) {
   let hasStraggler = false;
   let maxDelta = 0;
 
+  // The counters reset mid-round when a window starts and are read mid-round when it ends,
+  // so the first and last rounds of a window can be partial (one round split across two
+  // windows). Judge only complete rounds; with fewer than 3 rounds there are none to judge.
+  const edgeRounds = new Set(roundNumbers.length >= 3 ? [roundNumbers[0], roundNumbers[roundNumbers.length - 1]] : roundNumbers);
+
   roundNumbers.forEach(rn => {
     const count = roundSpawnLog[rn];
     const delta = count - EXPECTED_REGIONS;
+    if (edgeRounds.has(rn)) {
+      console.log(`  Round ${rn}: ${count} spawns (${delta >= 0 ? '+' : ''}${delta}) [EDGE: may be partial, not judged]`);
+      return;
+    }
     if (Math.abs(delta) > maxDelta) maxDelta = Math.abs(delta);
     if (count < EXPECTED_REGIONS * 0.5) hasStraggler = true;
     const status = Math.abs(delta) <= 10 ? 'OK' : count < EXPECTED_REGIONS * 0.5 ? 'STRAGGLER' : 'WARN';
