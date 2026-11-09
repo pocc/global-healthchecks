@@ -25,6 +25,9 @@ build/
 *.sw?
 .DS_Store
 
+# Claude Code local settings
+.claude/
+
 # Cloudflare Workers
 .wrangler/
 .mf/
