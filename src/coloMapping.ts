@@ -1,7 +1,7 @@
 /**
  * Cloudflare Colo (Data Center) to City Mapping
  * Maps IATA airport codes to city names
- * Last updated: 2026-02-07
+ * Last updated: 2026-11-08 (checked against cloudflarestatus.com)
  */
 
 export const COLO_TO_CITY: Record<string, string> = {
@@ -39,6 +39,7 @@ export const COLO_TO_CITY: Record<string, string> = {
   'ADD': 'Addis Ababa, Ethiopia',
   'LLW': 'Lilongwe, Malawi',
   'CZL': 'Constantine, Algeria',
+  'DLA': 'Douala, Cameroon',
 
   // Asia
   'AMD': 'Ahmedabad, India',
@@ -131,6 +132,19 @@ export const COLO_TO_CITY: Record<string, string> = {
   'CTU': 'Chengdu, China',
   'AGR': 'Agra, India',
   'CJB': 'Coimbatore, India',
+  'ACX': 'Xingyi, China',
+  'AIP': 'Jalandhar, India',
+  'AVA': 'Anshun, China',
+  'BBI': 'Bhubaneswar, India',
+  'BDQ': 'Jamnagar, India',
+  'DYU': 'Dushanbe, Tajikistan',
+  'JAI': 'Jaipur, India',
+  'JRG': 'Sambalpur, India',
+  'LHW': 'Lanzhou, China',
+  'LUH': 'Ludhiana, India',
+  'LYA': 'Luoyang, China',
+  'PNQ': 'Pune, India',
+  'UDR': 'Udaipur, India',
 
   // Europe
   'AMS': 'Amsterdam, Netherlands',
@@ -191,6 +205,8 @@ export const COLO_TO_CITY: Record<string, string> = {
   'WRO': 'Wroclaw, Poland',
   'ZAG': 'Zagreb, Croatia',
   'ZRH': 'Zurich, Switzerland',
+  'LJU': 'Ljubljana, Slovenia',
+  'PRN': 'Pristina, Kosovo',
 
   // Latin America & the Caribbean
   'QWJ': 'Americana, Brazil',
@@ -336,6 +352,7 @@ export const COLO_TO_CITY: Record<string, string> = {
   'YYZ': 'Toronto, ON',
   'YVR': 'Vancouver, BC',
   'YWG': 'Winnipeg, MB',
+  'CVG': 'Cincinnati, OH',
 
   // Oceania
   'ADL': 'Adelaide, Australia',
@@ -352,6 +369,7 @@ export const COLO_TO_CITY: Record<string, string> = {
   'PPT': 'Papeete, French Polynesia',
   'SUV': 'Suva, Fiji',
   'SYD': 'Sydney, Australia',
+  'WLG': 'Wellington, New Zealand',
 };
 
 /**
